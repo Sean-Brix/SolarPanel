@@ -1,0 +1,91 @@
+{
+  "key": "fixed",
+  "name": "Fixed Solar Panel",
+  "shortName": "Fixed",
+  "description": "Baseline static array used as the stability reference for the comparative study.",
+  "status": "optimal",
+  "summary": "Stable capture with no actuation overhead and dependable midday output.",
+  "connection": "ESP mock online",
+  "metrics": {
+    "voltage": 36.4,
+    "current": 8.1,
+    "power": 295.3,
+    "energyToday": 3.82,
+    "efficiency": 84,
+    "peakPower": 322.7
+  },
+  "ranges": {
+    "live": [
+      { "label": "11:10", "voltage": 31.8, "current": 4.8, "power": 152.6, "energy": 1.02, "efficiency": 72 },
+      { "label": "11:20", "voltage": 32.7, "current": 5.4, "power": 176.6, "energy": 1.21, "efficiency": 75 },
+      { "label": "11:30", "voltage": 34.1, "current": 6.2, "power": 211.4, "energy": 1.47, "efficiency": 78 },
+      { "label": "11:40", "voltage": 35.4, "current": 7.1, "power": 251.3, "energy": 1.86, "efficiency": 82 },
+      { "label": "11:50", "voltage": 36.0, "current": 7.6, "power": 273.6, "energy": 2.24, "efficiency": 83 },
+      { "label": "12:00", "voltage": 36.4, "current": 8.1, "power": 295.3, "energy": 2.61, "efficiency": 84 },
+      { "label": "12:10", "voltage": 36.1, "current": 7.9, "power": 285.2, "energy": 2.94, "efficiency": 83 },
+      { "label": "12:20", "voltage": 35.8, "current": 7.6, "power": 272.1, "energy": 3.26, "efficiency": 82 }
+    ],
+    "hourly": [
+      { "label": "08:00", "voltage": 30.8, "current": 4.9, "power": 151.0, "energy": 0.40, "efficiency": 70 },
+      { "label": "09:00", "voltage": 32.2, "current": 6.2, "power": 199.6, "energy": 0.88, "efficiency": 75 },
+      { "label": "10:00", "voltage": 34.4, "current": 7.1, "power": 244.2, "energy": 1.44, "efficiency": 80 },
+      { "label": "11:00", "voltage": 35.6, "current": 8.0, "power": 284.8, "energy": 2.11, "efficiency": 82 },
+      { "label": "12:00", "voltage": 36.2, "current": 8.5, "power": 307.7, "energy": 2.78, "efficiency": 84 },
+      { "label": "13:00", "voltage": 36.5, "current": 8.8, "power": 321.2, "energy": 3.31, "efficiency": 85 },
+      { "label": "14:00", "voltage": 36.0, "current": 8.3, "power": 298.8, "energy": 3.68, "efficiency": 83 },
+      { "label": "15:00", "voltage": 35.2, "current": 7.6, "power": 267.5, "energy": 3.82, "efficiency": 81 }
+    ],
+    "daily": [
+      { "label": "Mon", "voltage": 35.6, "current": 7.8, "power": 277.7, "energy": 3.52, "efficiency": 82 },
+      { "label": "Tue", "voltage": 35.8, "current": 7.9, "power": 282.8, "energy": 3.61, "efficiency": 83 },
+      { "label": "Wed", "voltage": 36.0, "current": 8.1, "power": 291.6, "energy": 3.74, "efficiency": 84 },
+      { "label": "Thu", "voltage": 36.2, "current": 8.2, "power": 296.8, "energy": 3.82, "efficiency": 84 },
+      { "label": "Fri", "voltage": 36.1, "current": 8.0, "power": 288.8, "energy": 3.77, "efficiency": 83 },
+      { "label": "Sat", "voltage": 35.9, "current": 7.7, "power": 276.4, "energy": 3.58, "efficiency": 82 },
+      { "label": "Sun", "voltage": 35.7, "current": 7.8, "power": 278.5, "energy": 3.60, "efficiency": 82 }
+    ],
+    "weekly": [
+      { "label": "W1", "voltage": 35.4, "current": 7.7, "power": 272.6, "energy": 20.4, "efficiency": 81 },
+      { "label": "W2", "voltage": 35.6, "current": 7.8, "power": 277.7, "energy": 21.2, "efficiency": 82 },
+      { "label": "W3", "voltage": 35.9, "current": 8.0, "power": 287.2, "energy": 22.0, "efficiency": 83 },
+      { "label": "W4", "voltage": 36.0, "current": 8.1, "power": 291.6, "energy": 22.8, "efficiency": 84 },
+      { "label": "W5", "voltage": 35.8, "current": 7.9, "power": 282.8, "energy": 21.9, "efficiency": 83 },
+      { "label": "W6", "voltage": 35.7, "current": 7.8, "power": 278.5, "energy": 21.6, "efficiency": 82 }
+    ]
+  },
+  "energy": {
+    "hourly": [
+      { "label": "08:00", "energy": 0.40, "cumulative": 0.40 },
+      { "label": "09:00", "energy": 0.48, "cumulative": 0.88 },
+      { "label": "10:00", "energy": 0.56, "cumulative": 1.44 },
+      { "label": "11:00", "energy": 0.67, "cumulative": 2.11 },
+      { "label": "12:00", "energy": 0.67, "cumulative": 2.78 },
+      { "label": "13:00", "energy": 0.53, "cumulative": 3.31 },
+      { "label": "14:00", "energy": 0.37, "cumulative": 3.68 },
+      { "label": "15:00", "energy": 0.14, "cumulative": 3.82 }
+    ],
+    "daily": [
+      { "label": "Mon", "energy": 3.52, "cumulative": 3.52 },
+      { "label": "Tue", "energy": 3.61, "cumulative": 7.13 },
+      { "label": "Wed", "energy": 3.74, "cumulative": 10.87 },
+      { "label": "Thu", "energy": 3.82, "cumulative": 14.69 },
+      { "label": "Fri", "energy": 3.77, "cumulative": 18.46 },
+      { "label": "Sat", "energy": 3.58, "cumulative": 22.04 },
+      { "label": "Sun", "energy": 3.60, "cumulative": 25.64 }
+    ],
+    "weekly": [
+      { "label": "W1", "energy": 20.4, "cumulative": 20.4 },
+      { "label": "W2", "energy": 21.2, "cumulative": 41.6 },
+      { "label": "W3", "energy": 22.0, "cumulative": 63.6 },
+      { "label": "W4", "energy": 22.8, "cumulative": 86.4 },
+      { "label": "W5", "energy": 21.9, "cumulative": 108.3 },
+      { "label": "W6", "energy": 21.6, "cumulative": 129.9 }
+    ]
+  },
+  "timeline": [
+    { "time": "08:15", "title": "Morning ramp", "detail": "Output rose steadily once the array cleared shadow from the east wall.", "type": "metric" },
+    { "time": "10:30", "title": "Reference peak forming", "detail": "Fixed array entered stable high-yield conditions with no adjustment events.", "type": "system" },
+    { "time": "12:00", "title": "Midday reference", "detail": "Panel hit the current power plateau used as the baseline for comparison.", "type": "metric" },
+    { "time": "14:10", "title": "Cloud edge softening", "detail": "Mild cloud band reduced current response while voltage remained stable.", "type": "forecast" }
+  ]
+}

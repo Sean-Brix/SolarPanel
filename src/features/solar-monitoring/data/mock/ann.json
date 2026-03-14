@@ -1,0 +1,116 @@
+{
+  "key": "ann",
+  "name": "ANN Smart Solar Panel",
+  "shortName": "ANN",
+  "description": "Prediction-guided tracker that only moves when the forecasted gain justifies the actuation cost.",
+  "status": "adaptive",
+  "summary": "Near-tracker energy capture with fewer corrections, lower movement cost, and prediction-backed control decisions.",
+  "connection": "ESP mock online",
+  "metrics": {
+    "voltage": 38.1,
+    "current": 8.6,
+    "power": 327.7,
+    "energyToday": 4.14,
+    "efficiency": 94,
+    "peakPower": 338.4,
+    "movementEnergy": 0.11,
+    "temperature": 34.8,
+    "humidity": 61,
+    "irradiance": 955
+  },
+  "tracker": {
+    "azimuth": 184,
+    "elevation": 59,
+    "heading": "Adaptive sun lock",
+    "mode": "Predictive adjustment",
+    "movementCount": 7,
+    "travelDegrees": 78,
+    "nextAdjustment": "7 min or cloud break"
+  },
+  "intelligence": {
+    "predictionAccuracy": 94.2,
+    "movementSavings": 31,
+    "projectedEnergy": 4.21,
+    "adaptiveMode": "Selective adjustment",
+    "predictions": [
+      { "label": "Predicted sunlight", "value": "High window until 14:20", "context": "Cloud cover remains below 24% for the next 90 minutes.", "confidence": 92, "trend": "up" },
+      { "label": "Positioning need", "value": "Low", "context": "Current azimuth is expected to remain within efficient tolerance for one cycle.", "confidence": 89, "trend": "steady" },
+      { "label": "Projected energy", "value": "4.21 kWh today", "context": "Model expects a slight lift over the conventional panel after movement savings.", "confidence": 87, "trend": "up" },
+      { "label": "Forecast drift", "value": "Minimal", "context": "Predicted-vs-actual variance is under 2.5% in the latest observation window.", "confidence": 94, "trend": "steady" }
+    ]
+  },
+  "ranges": {
+    "live": [
+      { "label": "11:10", "voltage": 33.1, "current": 5.0, "power": 165.5, "energy": 1.12, "efficiency": 77, "irradiance": 702, "predictedPower": 169.0, "movementCount": 1, "movementCost": 0.02 },
+      { "label": "11:20", "voltage": 34.5, "current": 5.9, "power": 203.6, "energy": 1.42, "efficiency": 81, "irradiance": 764, "predictedPower": 208.0, "movementCount": 2, "movementCost": 0.04 },
+      { "label": "11:30", "voltage": 35.8, "current": 6.8, "power": 243.4, "energy": 1.82, "efficiency": 86, "irradiance": 821, "predictedPower": 248.0, "movementCount": 3, "movementCost": 0.05 },
+      { "label": "11:40", "voltage": 37.0, "current": 7.7, "power": 284.9, "energy": 2.25, "efficiency": 90, "irradiance": 874, "predictedPower": 289.0, "movementCount": 4, "movementCost": 0.07 },
+      { "label": "11:50", "voltage": 37.6, "current": 8.4, "power": 315.8, "energy": 2.67, "efficiency": 93, "irradiance": 932, "predictedPower": 320.0, "movementCount": 5, "movementCost": 0.09 },
+      { "label": "12:00", "voltage": 38.1, "current": 8.6, "power": 327.7, "energy": 3.07, "efficiency": 94, "irradiance": 955, "predictedPower": 331.0, "movementCount": 6, "movementCost": 0.10 },
+      { "label": "12:10", "voltage": 37.8, "current": 8.3, "power": 313.7, "energy": 3.41, "efficiency": 93, "irradiance": 918, "predictedPower": 317.0, "movementCount": 6, "movementCost": 0.10 },
+      { "label": "12:20", "voltage": 37.2, "current": 7.9, "power": 293.9, "energy": 3.70, "efficiency": 91, "irradiance": 861, "predictedPower": 298.0, "movementCount": 7, "movementCost": 0.11 }
+    ],
+    "hourly": [
+      { "label": "08:00", "voltage": 31.7, "current": 5.2, "power": 164.8, "energy": 0.44, "efficiency": 76, "irradiance": 688, "predictedPower": 168.0, "movementCount": 1, "movementCost": 0.02 },
+      { "label": "09:00", "voltage": 33.6, "current": 6.5, "power": 218.4, "energy": 1.00, "efficiency": 82, "irradiance": 748, "predictedPower": 221.0, "movementCount": 2, "movementCost": 0.04 },
+      { "label": "10:00", "voltage": 35.9, "current": 7.5, "power": 269.3, "energy": 1.66, "efficiency": 87, "irradiance": 812, "predictedPower": 274.0, "movementCount": 3, "movementCost": 0.05 },
+      { "label": "11:00", "voltage": 37.0, "current": 8.2, "power": 303.4, "energy": 2.43, "efficiency": 91, "irradiance": 878, "predictedPower": 308.0, "movementCount": 4, "movementCost": 0.07 },
+      { "label": "12:00", "voltage": 37.8, "current": 8.7, "power": 328.9, "energy": 3.18, "efficiency": 94, "irradiance": 946, "predictedPower": 332.0, "movementCount": 6, "movementCost": 0.09 },
+      { "label": "13:00", "voltage": 38.2, "current": 8.9, "power": 338.4, "energy": 3.79, "efficiency": 95, "irradiance": 972, "predictedPower": 340.0, "movementCount": 6, "movementCost": 0.10 },
+      { "label": "14:00", "voltage": 37.6, "current": 8.5, "power": 319.6, "energy": 4.06, "efficiency": 94, "irradiance": 928, "predictedPower": 322.0, "movementCount": 7, "movementCost": 0.11 },
+      { "label": "15:00", "voltage": 37.1, "current": 8.1, "power": 300.5, "energy": 4.14, "efficiency": 92, "irradiance": 872, "predictedPower": 304.0, "movementCount": 7, "movementCost": 0.11 }
+    ],
+    "daily": [
+      { "label": "Mon", "voltage": 37.0, "current": 8.2, "power": 303.4, "energy": 3.98, "efficiency": 92, "irradiance": 910, "predictedPower": 307.0, "movementCount": 7, "movementCost": 0.10 },
+      { "label": "Tue", "voltage": 37.2, "current": 8.3, "power": 308.8, "energy": 4.05, "efficiency": 93, "irradiance": 918, "predictedPower": 312.0, "movementCount": 7, "movementCost": 0.10 },
+      { "label": "Wed", "voltage": 37.6, "current": 8.5, "power": 319.6, "energy": 4.10, "efficiency": 94, "irradiance": 932, "predictedPower": 322.0, "movementCount": 7, "movementCost": 0.11 },
+      { "label": "Thu", "voltage": 37.8, "current": 8.6, "power": 325.1, "energy": 4.14, "efficiency": 94, "irradiance": 955, "predictedPower": 329.0, "movementCount": 7, "movementCost": 0.11 },
+      { "label": "Fri", "voltage": 37.5, "current": 8.4, "power": 315.0, "energy": 4.08, "efficiency": 93, "irradiance": 924, "predictedPower": 318.0, "movementCount": 6, "movementCost": 0.10 },
+      { "label": "Sat", "voltage": 37.1, "current": 8.1, "power": 300.5, "energy": 4.01, "efficiency": 92, "irradiance": 896, "predictedPower": 304.0, "movementCount": 6, "movementCost": 0.10 },
+      { "label": "Sun", "voltage": 37.3, "current": 8.2, "power": 305.9, "energy": 4.03, "efficiency": 92, "irradiance": 902, "predictedPower": 309.0, "movementCount": 6, "movementCost": 0.10 }
+    ],
+    "weekly": [
+      { "label": "W1", "voltage": 36.8, "current": 8.1, "power": 298.1, "energy": 23.2, "efficiency": 91, "irradiance": 892, "predictedPower": 301.0, "movementCount": 44, "movementCost": 0.70 },
+      { "label": "W2", "voltage": 37.0, "current": 8.2, "power": 303.4, "energy": 23.9, "efficiency": 92, "irradiance": 901, "predictedPower": 307.0, "movementCount": 45, "movementCost": 0.72 },
+      { "label": "W3", "voltage": 37.3, "current": 8.3, "power": 309.6, "energy": 24.4, "efficiency": 93, "irradiance": 915, "predictedPower": 313.0, "movementCount": 46, "movementCost": 0.73 },
+      { "label": "W4", "voltage": 37.6, "current": 8.5, "power": 319.6, "energy": 24.9, "efficiency": 94, "irradiance": 930, "predictedPower": 323.0, "movementCount": 47, "movementCost": 0.76 },
+      { "label": "W5", "voltage": 37.4, "current": 8.4, "power": 314.2, "energy": 24.6, "efficiency": 93, "irradiance": 920, "predictedPower": 317.0, "movementCount": 46, "movementCost": 0.74 },
+      { "label": "W6", "voltage": 37.2, "current": 8.3, "power": 308.8, "energy": 24.0, "efficiency": 92, "irradiance": 907, "predictedPower": 312.0, "movementCount": 45, "movementCost": 0.72 }
+    ]
+  },
+  "energy": {
+    "hourly": [
+      { "label": "08:00", "energy": 0.44, "cumulative": 0.44 },
+      { "label": "09:00", "energy": 0.56, "cumulative": 1.00 },
+      { "label": "10:00", "energy": 0.66, "cumulative": 1.66 },
+      { "label": "11:00", "energy": 0.77, "cumulative": 2.43 },
+      { "label": "12:00", "energy": 0.75, "cumulative": 3.18 },
+      { "label": "13:00", "energy": 0.61, "cumulative": 3.79 },
+      { "label": "14:00", "energy": 0.27, "cumulative": 4.06 },
+      { "label": "15:00", "energy": 0.08, "cumulative": 4.14 }
+    ],
+    "daily": [
+      { "label": "Mon", "energy": 3.98, "cumulative": 3.98 },
+      { "label": "Tue", "energy": 4.05, "cumulative": 8.03 },
+      { "label": "Wed", "energy": 4.10, "cumulative": 12.13 },
+      { "label": "Thu", "energy": 4.14, "cumulative": 16.27 },
+      { "label": "Fri", "energy": 4.08, "cumulative": 20.35 },
+      { "label": "Sat", "energy": 4.01, "cumulative": 24.36 },
+      { "label": "Sun", "energy": 4.03, "cumulative": 28.39 }
+    ],
+    "weekly": [
+      { "label": "W1", "energy": 23.2, "cumulative": 23.2 },
+      { "label": "W2", "energy": 23.9, "cumulative": 47.1 },
+      { "label": "W3", "energy": 24.4, "cumulative": 71.5 },
+      { "label": "W4", "energy": 24.9, "cumulative": 96.4 },
+      { "label": "W5", "energy": 24.6, "cumulative": 121.0 },
+      { "label": "W6", "energy": 24.0, "cumulative": 145.0 }
+    ]
+  },
+  "timeline": [
+    { "time": "08:05", "title": "Predictive start-up", "detail": "ANN skipped one early rotation because expected gain stayed below threshold.", "type": "system" },
+    { "time": "10:25", "title": "Confidence update", "detail": "Forecast model confidence rose after irradiance variance remained low for two cycles.", "type": "forecast" },
+    { "time": "12:00", "title": "Predicted and actual aligned", "detail": "Actual power remained within 1.0% of the model estimate through the midday peak.", "type": "metric" },
+    { "time": "14:15", "title": "Movement avoided", "detail": "Cloud disturbance flagged, but the model rejected a motor command due to low expected payoff.", "type": "movement" }
+  ]
+}

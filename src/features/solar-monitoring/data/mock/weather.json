@@ -1,0 +1,17 @@
+{
+  "current": {
+    "condition": "Mostly Sunny",
+    "summary": "Short cloud band is expected near 15:00, but irradiance remains strong through the active comparison window.",
+    "temp": 35,
+    "sunrise": "06:58",
+    "sunset": "19:06",
+    "uv": "High",
+    "cloudiness": 22
+  },
+  "forecast": [
+    { "day": "Today", "condition": "Mostly sunny", "sunlight": 88, "cloudiness": 22, "confidence": 92 },
+    { "day": "Tomorrow", "condition": "Light clouds", "sunlight": 76, "cloudiness": 34, "confidence": 84 },
+    { "day": "Tuesday", "condition": "Passing showers", "sunlight": 61, "cloudiness": 49, "confidence": 79 },
+    { "day": "Wednesday", "condition": "Clear morning", "sunlight": 90, "cloudiness": 18, "confidence": 88 }
+  ]
+}
