@@ -16,8 +16,23 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ message: 'voltage, current, and power are required numbers' })
   }
 
+  const now = new Date()
+  const previous = await prisma.fixedReading.findFirst({
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true, cumulativeEnergyKwh: true },
+  })
+
+  const deltaHours = previous
+    ? Math.max((now.getTime() - previous.createdAt.getTime()) / 3_600_000, 0)
+    : 1 / 60
+
+  const computedPower = voltage * current
+  const effectivePower = power > 0 ? (power + computedPower) / 2 : computedPower
+  const energyKwh = Number(((effectivePower * deltaHours) / 1000).toFixed(6))
+  const cumulativeEnergyKwh = Number(((previous?.cumulativeEnergyKwh ?? 0) + energyKwh).toFixed(6))
+
   const reading = await prisma.fixedReading.create({
-    data: { voltage, current, power },
+    data: { voltage, current, power, energyKwh, cumulativeEnergyKwh },
   })
 
   return res.status(201).json(reading)

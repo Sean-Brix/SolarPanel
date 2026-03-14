@@ -15,6 +15,8 @@ model FixedReading {
   voltage   Float    // V
   current   Float    // A
   power     Float    // W  (computed on the ESP32 as V × I)
+  energyKwh Float    @default(0) // interval energy (kWh) computed from time + power
+  cumulativeEnergyKwh Float @default(0) // running total energy (kWh)
   createdAt DateTime @default(now())
 
   @@map("fixed_readings")
@@ -28,6 +30,8 @@ model ConventionalReading {
   voltage   Float    // V
   current   Float    // A
   power     Float    // W
+  energyKwh Float    @default(0) // interval energy (kWh) computed from time + power
+  cumulativeEnergyKwh Float @default(0) // running total energy (kWh)
   axisX     Float    // IMU X-axis (degrees or raw)
   axisY     Float    // IMU Y-axis
   axisZ     Float    // IMU Z-axis
@@ -49,6 +53,8 @@ model AnnReading {
   voltage   Float    // V
   current   Float    // A
   power     Float    // W
+  energyKwh Float    @default(0) // interval energy (kWh) computed from time + power
+  cumulativeEnergyKwh Float @default(0) // running total energy (kWh)
   axisX     Float    // IMU X-axis
   axisY     Float    // IMU Y-axis
   axisZ     Float    // IMU Z-axis

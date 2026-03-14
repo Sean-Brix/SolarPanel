@@ -1,8 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Activity,
-  BarChart3,
   BrainCircuit,
+  Code2,
   Gauge,
   Moon,
   MoreHorizontal,
@@ -27,14 +27,14 @@ const navItems = [
   },
   { label: 'ANN Panel', shortLabel: 'ANN', path: '/ann-panel', icon: BrainCircuit },
   {
-    label: 'Comparison',
-    shortLabel: 'Compare',
-    path: '/comparison',
-    icon: BarChart3,
+    label: 'Dev Page',
+    shortLabel: 'Dev',
+    path: '/dev',
+    icon: Code2,
   },
 ]
 
-const primaryMobilePaths = ['/overview', '/ann-panel', '/comparison']
+const primaryMobilePaths = ['/overview', '/ann-panel', '/dev']
 const primaryMobileNav = navItems.filter((item) => primaryMobilePaths.includes(item.path))
 const secondaryMobileNav = navItems.filter((item) => !primaryMobilePaths.includes(item.path))
 

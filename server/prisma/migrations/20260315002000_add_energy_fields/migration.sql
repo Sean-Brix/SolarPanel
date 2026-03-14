@@ -1,0 +1,11 @@
+ALTER TABLE `fixed_readings`
+  ADD COLUMN `energyKwh` DOUBLE NOT NULL DEFAULT 0,
+  ADD COLUMN `cumulativeEnergyKwh` DOUBLE NOT NULL DEFAULT 0;
+
+ALTER TABLE `conventional_readings`
+  ADD COLUMN `energyKwh` DOUBLE NOT NULL DEFAULT 0,
+  ADD COLUMN `cumulativeEnergyKwh` DOUBLE NOT NULL DEFAULT 0;
+
+ALTER TABLE `ann_readings`
+  ADD COLUMN `energyKwh` DOUBLE NOT NULL DEFAULT 0,
+  ADD COLUMN `cumulativeEnergyKwh` DOUBLE NOT NULL DEFAULT 0;

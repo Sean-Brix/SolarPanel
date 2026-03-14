@@ -13,6 +13,10 @@ export function HistoricalLogTable({
   title = 'Historical Logs',
   description = 'Recorded values prepared for later backend persistence.',
 }: HistoricalLogTableProps) {
+  const hasPositionColumn = rows.some(
+    (row) => row.azimuth !== undefined && row.elevation !== undefined,
+  )
+
   return (
     <Card>
       <CardHeader>
@@ -30,9 +34,8 @@ export function HistoricalLogTable({
                   <th className="pb-2 font-medium">Current</th>
                   <th className="pb-2 font-medium">Power</th>
                   <th className="pb-2 font-medium">Energy</th>
-                  <th className="pb-2 font-medium">Position</th>
+                  {hasPositionColumn ? <th className="pb-2 font-medium">Position</th> : null}
                   <th className="pb-2 font-medium">Forecast</th>
-                  <th className="pb-2 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -56,16 +59,15 @@ export function HistoricalLogTable({
                     <td className="border-y border-slate-200/90 px-4 py-3 dark:border-white/8">
                       {row.energy.toFixed(2)} kWh
                     </td>
-                    <td className="border-y border-slate-200/90 px-4 py-3 dark:border-white/8">
-                      {row.azimuth !== undefined && row.elevation !== undefined
-                        ? `${row.azimuth} deg / ${row.elevation} deg`
-                        : 'Not tracked'}
-                    </td>
-                    <td className="border-y border-slate-200/90 px-4 py-3 dark:border-white/8">
+                    {hasPositionColumn ? (
+                      <td className="border-y border-slate-200/90 px-4 py-3 dark:border-white/8">
+                        {row.azimuth !== undefined && row.elevation !== undefined
+                          ? `${row.azimuth} deg / ${row.elevation} deg`
+                          : 'Not tracked'}
+                      </td>
+                    ) : null}
+                    <td className="rounded-r-2xl border-y border-r border-slate-200/90 px-4 py-3 dark:border-white/8">
                       {row.forecast ?? 'N/A'}
-                    </td>
-                    <td className="rounded-r-2xl border-y border-r border-slate-200/90 px-4 py-3 text-slate-900 dark:border-white/8 dark:text-white">
-                      {row.status}
                     </td>
                   </tr>
                 ))}

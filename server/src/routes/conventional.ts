@@ -35,8 +35,36 @@ router.post('/', async (req, res) => {
     })
   }
 
+  const now = new Date()
+  const previous = await prisma.conventionalReading.findFirst({
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true, cumulativeEnergyKwh: true },
+  })
+
+  const deltaHours = previous
+    ? Math.max((now.getTime() - previous.createdAt.getTime()) / 3_600_000, 0)
+    : 1 / 60
+
+  const computedPower = voltage * current
+  const effectivePower = power > 0 ? (power + computedPower) / 2 : computedPower
+  const energyKwh = Number(((effectivePower * deltaHours) / 1000).toFixed(6))
+  const cumulativeEnergyKwh = Number(((previous?.cumulativeEnergyKwh ?? 0) + energyKwh).toFixed(6))
+
   const reading = await prisma.conventionalReading.create({
-    data: { voltage, current, power, axisX, axisY, axisZ, ldrTop, ldrBottom, ldrLeft, ldrRight },
+    data: {
+      voltage,
+      current,
+      power,
+      energyKwh,
+      cumulativeEnergyKwh,
+      axisX,
+      axisY,
+      axisZ,
+      ldrTop,
+      ldrBottom,
+      ldrLeft,
+      ldrRight,
+    },
   })
 
   return res.status(201).json(reading)

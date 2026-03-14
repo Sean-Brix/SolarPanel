@@ -16,11 +16,9 @@ import { PredictionCard } from '@/features/solar-monitoring/components/Predictio
 import { TimelineCard } from '@/features/solar-monitoring/components/TimelineCard'
 import { TrackerPositionCard } from '@/features/solar-monitoring/components/TrackerPositionCard'
 import { WeatherCard } from '@/features/solar-monitoring/components/WeatherCard'
-import { useMockTelemetry } from '@/features/solar-monitoring/hooks/useMockTelemetry'
+import { usePanelTrackerData } from '@/features/solar-monitoring/hooks/usePanelTrackerData'
 import {
   environments,
-  getPanelRangeEnergy,
-  history,
   notifications,
   panels,
   weather,
@@ -32,8 +30,16 @@ export function AnnPanelPage() {
   const panel = panels.ann
   const [range, setRange] = useState<TimeRange>('live')
   const [, startTransition] = useTransition()
-  const telemetry = useMockTelemetry(panel.ranges.live)
-  const sample = telemetry.sample ?? panel.ranges.live[0]
+  const telemetry = usePanelTrackerData('ann', range)
+  const sample = telemetry.sample ?? {
+    label: 'N/A',
+    voltage: 0,
+    current: 0,
+    power: 0,
+    energy: 0,
+    irradiance: 0,
+    predictedPower: 0,
+  }
 
   return (
     <div className="space-y-4 pb-10">
@@ -43,7 +49,7 @@ export function AnnPanelPage() {
         description="Smart tracking with prediction and weather context."
         connection={panel.connection}
         status={panel.status}
-        lastUpdated={telemetry.updatedAt}
+        lastUpdated={telemetry.lastUpdated}
         range={range}
         onRangeChange={(nextRange) => startTransition(() => setRange(nextRange))}
       />
@@ -99,7 +105,7 @@ export function AnnPanelPage() {
 
       <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
         <WeatherCard environment={environments.ann} weather={weather} />
-        {panel.tracker ? <TrackerPositionCard tracker={panel.tracker} /> : null}
+        {telemetry.tracker ? <TrackerPositionCard tracker={telemetry.tracker} /> : null}
       </div>
 
       <NotificationPanel items={notifications.ann} />
@@ -108,7 +114,7 @@ export function AnnPanelPage() {
         <ChartCard
           title="Electrical Performance"
           subtitle="Electrical behavior across the selected window."
-          data={panel.ranges[range]}
+          data={telemetry.series}
           series={[
             { key: 'voltage', label: 'Voltage', color: '#38bdf8', type: 'line' },
             { key: 'current', label: 'Current', color: '#bef264', type: 'line' },
@@ -118,7 +124,7 @@ export function AnnPanelPage() {
         <ChartCard
           title="Irradiance and Power"
           subtitle="Energy input vs panel output."
-          data={panel.ranges[range]}
+          data={telemetry.series}
           series={[
             { key: 'irradiance', label: 'Irradiance', color: '#5eead4', type: 'area' },
             { key: 'power', label: 'Power', color: '#fbbf24', type: 'line' },
@@ -130,7 +136,7 @@ export function AnnPanelPage() {
         <ChartCard
           title="Predicted vs Actual Power"
           subtitle="Prediction compared to measured output."
-          data={panel.ranges[range]}
+          data={telemetry.series}
           series={[
             { key: 'predictedPower', label: 'Predicted', color: '#38bdf8', type: 'line' },
             { key: 'power', label: 'Actual', color: '#bef264', type: 'line' },
@@ -140,7 +146,7 @@ export function AnnPanelPage() {
         <ChartCard
           title="Energy Trend"
           subtitle="Energy accumulation over time."
-          data={getPanelRangeEnergy('ann', range)}
+          data={telemetry.energySeries}
           series={[
             { key: 'energy', label: 'Energy', color: '#38bdf8', type: 'bar' },
             { key: 'cumulative', label: 'Cumulative', color: '#bef264', type: 'line' },
@@ -168,9 +174,9 @@ export function AnnPanelPage() {
       />
 
       <HistoricalLogTable
-        rows={history.ann}
+        rows={telemetry.historyRows}
         title="ANN Historical Log"
-        description="Prediction snapshots with measured values."
+        description="Prediction snapshots with measured values from database telemetry."
       />
     </div>
   )

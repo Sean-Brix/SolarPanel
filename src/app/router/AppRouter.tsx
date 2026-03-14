@@ -27,9 +27,9 @@ const AnnPanelPage = lazy(async () => {
   return { default: module.AnnPanelPage }
 })
 
-const ComparisonPage = lazy(async () => {
-  const module = await import('@/features/solar-monitoring/pages/ComparisonPage')
-  return { default: module.ComparisonPage }
+const DevPage = lazy(async () => {
+  const module = await import('@/features/solar-monitoring/pages/DevPage')
+  return { default: module.DevPage }
 })
 
 function RouteFrame({ children }: { children: React.ReactNode }) {
@@ -135,10 +135,10 @@ export function AppRouter() {
           }
         />
         <Route
-          path="/comparison"
+          path="/dev"
           element={
             <RouteFrame>
-              <ComparisonPage />
+              <DevPage />
             </RouteFrame>
           }
         />

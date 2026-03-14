@@ -135,7 +135,6 @@ export interface HistoryRow {
   azimuth?: number
   elevation?: number
   forecast?: string
-  status: string
 }
 
 export interface ComparisonSummary {
