@@ -1,0 +1,1 @@
+ALTER TABLE admins CHANGE COLUMN email username VARCHAR(191) NOT NULL;

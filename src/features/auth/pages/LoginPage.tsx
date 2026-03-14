@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import type { FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { LockKeyhole, SunMedium } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/shared/lib/cn'
@@ -39,9 +39,37 @@ function LoginForm({
   const navigate = useNavigate()
   const isDark = tone === 'dark'
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    navigate('/overview')
+    setError(null)
+    setIsLoading(true)
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.message ?? 'Login failed')
+        return
+      }
+
+      localStorage.setItem('token', data.token)
+      navigate('/overview')
+    } catch {
+      setError('Unable to reach the server. Try again.')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -76,14 +104,17 @@ function LoginForm({
       </div>
 
       <div className="mt-6 grid gap-4">
-        <label className="grid gap-2" htmlFor={`email-${tone}`}>
+        <label className="grid gap-2" htmlFor={`username-${tone}`}>
           <span className={cn('text-sm font-medium', isDark ? 'text-slate-200' : 'text-slate-700')}>
-            Email
+            Username
           </span>
           <input
-            id={`email-${tone}`}
-            type="email"
-            placeholder="you@example.com"
+            id={`username-${tone}`}
+            type="text"
+            placeholder="admin"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
             className={cn(
               'h-12 rounded-2xl border px-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4',
               isDark
@@ -101,6 +132,9 @@ function LoginForm({
             id={`password-${tone}`}
             type="password"
             placeholder="Enter your password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             className={cn(
               'h-12 rounded-2xl border px-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4',
               isDark
@@ -109,6 +143,10 @@ function LoginForm({
             )}
           />
         </label>
+
+        {error && (
+          <p className="rounded-xl bg-red-500/10 px-4 py-2 text-sm text-red-400">{error}</p>
+        )}
       </div>
 
       <div
@@ -134,14 +172,15 @@ function LoginForm({
 
       <button
         type="submit"
+        disabled={isLoading || !username || !password}
         className={cn(
-          'mt-6 h-12 w-full rounded-2xl text-sm font-semibold transition',
+          'mt-6 h-12 w-full rounded-2xl text-sm font-semibold transition disabled:opacity-50',
           isDark
             ? 'bg-amber-400 text-slate-950 hover:bg-amber-300'
             : 'bg-slate-950 text-white hover:bg-slate-800',
         )}
       >
-        Login
+        {isLoading ? 'Signing in…' : 'Login'}
       </button>
     </motion.form>
   )

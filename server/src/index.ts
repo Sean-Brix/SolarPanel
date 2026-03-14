@@ -6,7 +6,12 @@ import { PrismaClient } from '@prisma/client'
 import fixedRouter from './routes/fixed.js'
 import conventionalRouter from './routes/conventional.js'
 import annRouter from './routes/ann.js'
+import authRouter from './routes/auth.js'
 
+// Support both run modes:
+// 1) `npm run dev` inside `server/` (loads `.env`)
+// 2) root scripts like `npm run server:dev` (loads `server/.env`)
+dotenv.config()
 dotenv.config({ path: 'server/.env' })
 
 const prisma = new PrismaClient()
@@ -25,6 +30,9 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/fixed', fixedRouter)
 app.use('/api/conventional', conventionalRouter)
 app.use('/api/ann', annRouter)
+
+// ─── Auth routes ───────────────────────────────────────────────────────────
+app.use('/api/auth', authRouter)
 
 // ─── Overview ──────────────────────────────────────────────────────────────
 // GET /api/overview/latest

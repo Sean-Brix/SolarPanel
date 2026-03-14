@@ -15,4 +15,10 @@ export default defineConfig({
     outDir: 'server/public',
     emptyOutDir: true,
   },
+  server: {
+    // Proxy /api calls to the Express server during development
+    proxy: {
+      '/api': 'http://localhost:4000',
+    },
+  },
 })
