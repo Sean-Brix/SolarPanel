@@ -3,6 +3,7 @@ import {
   Activity,
   BrainCircuit,
   Code2,
+  Download,
   Gauge,
   Moon,
   MoreHorizontal,
@@ -14,6 +15,7 @@ import {
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useTheme } from '@/app/providers/useTheme'
+import { usePwaInstall } from '@/hooks/usePwaInstall'
 import { cn } from '@/shared/lib/cn'
 
 const navItems = [
@@ -69,6 +71,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false)
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const isAuthRoute = location.pathname === '/' || location.pathname === '/login'
+  const { canInstall, install } = usePwaInstall()
 
   useEffect(() => {
     const timer = window.setTimeout(() => setReady(true), 700)
@@ -128,6 +131,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <p className="mt-3 text-sm font-medium text-lime-900 dark:text-lime-50">
                 Mock telemetry online
               </p>
+              {canInstall ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void install()
+                  }}
+                  className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Install app</span>
+                </button>
+              ) : null}
             </div>
           </div>
         </aside>
@@ -233,6 +248,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
 
               <div className="mt-3 border-t border-slate-200 px-2 pt-3 dark:border-white/10">
+                {canInstall ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void install()
+                      setMobileMoreOpen(false)
+                    }}
+                    className="mb-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>Install app</span>
+                  </button>
+                ) : null}
                 <ThemeButton theme={theme} onClick={toggleTheme} />
               </div>
             </motion.div>
