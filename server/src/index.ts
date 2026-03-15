@@ -7,6 +7,7 @@ import fixedRouter from './routes/fixed.js'
 import conventionalRouter from './routes/conventional.js'
 import annRouter from './routes/ann.js'
 import authRouter from './routes/auth.js'
+import devRouter from './routes/dev.js'
 import { prisma } from './lib/prisma.js'
 
 // Support both run modes:
@@ -36,6 +37,7 @@ app.use('/api/ann', annRouter)
 
 // ─── Auth routes ───────────────────────────────────────────────────────────
 app.use('/api/auth', authRouter)
+app.use('/api/dev', devRouter)
 
 // ─── Overview ──────────────────────────────────────────────────────────────
 // GET /api/overview/latest

@@ -27,6 +27,8 @@ type ChartCardProps<T extends object> = {
   formatValue?: (value: number) => string
   footer?: string
   height?: number
+  headerAction?: React.ReactNode
+  showVerticalGrid?: boolean
 }
 
 type TooltipPayload = {
@@ -81,18 +83,23 @@ export function ChartCard<T extends object>({
   formatValue = (value) => formatNumber(value, 1),
   footer,
   height = 280,
+  headerAction,
+  showVerticalGrid = false,
 }: ChartCardProps<T>) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{subtitle}</CardDescription>
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{subtitle}</CardDescription>
+        </div>
+        {headerAction ? <div className="sm:shrink-0">{headerAction}</div> : null}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="min-w-0" style={{ height }}>
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={data} margin={{ top: 10, right: 10, left: -18, bottom: 0 }}>
-              <CartesianGrid stroke="rgba(148, 163, 184, 0.08)" vertical={false} />
+              <CartesianGrid stroke="rgba(148, 163, 184, 0.08)" vertical={showVerticalGrid} />
               <XAxis
                 dataKey="label"
                 stroke="rgba(148, 163, 184, 0.5)"

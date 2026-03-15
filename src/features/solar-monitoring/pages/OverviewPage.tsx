@@ -3,6 +3,7 @@ import { Download } from 'lucide-react'
 import { ChartCard } from '@/features/solar-monitoring/components/ChartCard'
 import { HistoricalLogTable } from '@/features/solar-monitoring/components/HistoricalLogTable'
 import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
+import { fetchJsonCached } from '@/shared/lib/apiCache'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
 import type { HistoryRow, PanelKey } from '@/shared/types/solar'
@@ -35,6 +36,8 @@ type NormalizedReading = {
   elevationAngle?: number
 }
 
+type TrendMetric = 'energy' | 'efficiency' | 'power'
+
 type PanelMetrics = {
   panel: PanelKey
   averagePower: number
@@ -66,9 +69,28 @@ const RANGE_CONFIG: Record<OverviewRange, { label: string; sinceMs?: number; lim
   month: { label: 'Last 30 days', sinceMs: 30 * 24 * 60 * 60 * 1000, limit: 10_000 },
 }
 
+const OVERVIEW_HISTORY_CACHE_MS = 30 * 1000
+const OVERVIEW_REFRESH_MS = 30 * 1000
+
 function average(values: number[]) {
   if (!values.length) return 0
   return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function estimateIrradiance(power: number, panelType: PanelKey) {
+  const assumedEfficiency = panelType === 'ann' ? 0.22 : panelType === 'conventional' ? 0.2 : 0.18
+  const estimated = power / (PANEL_AREA_M2 * assumedEfficiency)
+
+  return Math.max(0, Math.min(1100, estimated))
+}
+
+function estimateTemperature(timestamp: Date, irradiance: number) {
+  const hour = timestamp.getHours() + timestamp.getMinutes() / 60
+  const diurnalOffset = Math.sin(((hour - 6) / 12) * Math.PI)
+  const ambientBase = 25 + Math.max(0, diurnalOffset) * 7
+  const irradianceBoost = irradiance / 140
+
+  return Math.min(52, Math.max(20, ambientBase + irradianceBoost))
 }
 
 function computeMetrics(panel: PanelKey, rows: NormalizedReading[]): PanelMetrics {
@@ -166,8 +188,53 @@ function toHistoryRows(rows: NormalizedReading[]): HistoryRow[] {
     })
 }
 
+function formatTrendLabel(timestamp: Date, range: OverviewRange) {
+  if (range === 'all' || range === 'month' || range === 'week') {
+    return timestamp.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+
+  return timestamp.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function buildPanelTrend(rows: NormalizedReading[]) {
+  const ordered = [...rows].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+  const result = new Map<number, { energyWh: number; efficiencyPct: number; averagePower: number }>()
+
+  let cumulativeEnergyWh = 0
+  let cumulativeSolarInputWh = 0
+  let cumulativePower = 0
+
+  for (let index = 0; index < ordered.length; index += 1) {
+    const current = ordered[index]
+    const previous = index > 0 ? ordered[index - 1] : null
+
+    const deltaHours = previous
+      ? Math.max((current.timestamp.getTime() - previous.timestamp.getTime()) / 3_600_000, 0)
+      : 1 / 60
+
+    const energyWh = current.power * deltaHours
+    cumulativeEnergyWh += energyWh
+    cumulativeSolarInputWh += current.irradiance * PANEL_AREA_M2 * deltaHours
+    cumulativePower += current.power
+
+    result.set(current.timestamp.getTime(), {
+      energyWh: cumulativeEnergyWh,
+      efficiencyPct: cumulativeSolarInputWh > 0 ? (cumulativeEnergyWh / cumulativeSolarInputWh) * 100 : 0,
+      averagePower: cumulativePower / (index + 1),
+    })
+  }
+
+  return result
+}
+
 export function OverviewPage() {
   const [range, setRange] = useState<OverviewRange>('all')
+  const [trendMetric, setTrendMetric] = useState<TrendMetric>('energy')
   const [activeLogPanel, setActiveLogPanel] = useState<PanelKey>('fixed')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -185,7 +252,10 @@ export function OverviewPage() {
       if (since) {
         query.set('since', since.toISOString())
       }
-      const response = await fetch(`/api/${panel}/history?${query.toString()}`)
+      const response = await fetchJsonCached<BackendReading[]>(
+        `/api/${panel}/history?${query.toString()}`,
+        { ttlMs: OVERVIEW_HISTORY_CACHE_MS },
+      )
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -195,7 +265,7 @@ export function OverviewPage() {
         throw new Error(`Failed to load ${panel} readings (${response.status})`)
       }
 
-      const payload = (await response.json()) as BackendReading[]
+      const payload = response.body
 
       return payload
         .map((item) => {
@@ -203,15 +273,19 @@ export function OverviewPage() {
           const timestamp = timestampValue ? new Date(timestampValue) : new Date()
           const voltage = Number(item.voltage ?? 0)
           const current = Number(item.current ?? 0)
+          const power = voltage * current
+          const rawIrradiance = Number(item.irradiance ?? 0)
+          const irradiance = rawIrradiance > 0 ? rawIrradiance : estimateIrradiance(power, panel)
+          const rawTemperature = Number(item.temperature ?? 0)
 
           return {
             timestamp,
             panelType: panel,
             voltage,
             current,
-            power: voltage * current,
-            irradiance: Number(item.irradiance ?? 0),
-            temperature: Number(item.temperature ?? 0),
+            power,
+            irradiance,
+            temperature: rawTemperature > 0 ? rawTemperature : estimateTemperature(timestamp, irradiance),
             humidity: Number(item.humidity ?? 0),
             azimuthAngle: item.azimuth_angle ?? item.axisY,
             elevationAngle: item.elevation_angle ?? item.axisX,
@@ -253,8 +327,10 @@ export function OverviewPage() {
 
     void load()
     const timer = window.setInterval(() => {
-      void load()
-    }, 5000)
+      if (document.visibilityState === 'visible') {
+        void load()
+      }
+    }, OVERVIEW_REFRESH_MS)
 
     return () => {
       active = false
@@ -328,13 +404,77 @@ export function OverviewPage() {
   }, [readingsByPanel])
 
   const comparisonChartData = useMemo(() => {
-    return metrics.list.map((item) => ({
-      label: PANEL_LABEL[item.panel],
-      totalEnergyWh: item.totalEnergyWh,
-      efficiencyPct: item.efficiencyPct,
-      averagePower: item.averagePower,
-    }))
-  }, [metrics])
+    const fixedTrend = buildPanelTrend(readingsByPanel.fixed)
+    const conventionalTrend = buildPanelTrend(readingsByPanel.conventional)
+    const annTrend = buildPanelTrend(readingsByPanel.ann)
+
+    const allTimestamps = Array.from(
+      new Set<number>([
+        ...fixedTrend.keys(),
+        ...conventionalTrend.keys(),
+        ...annTrend.keys(),
+      ]),
+    ).sort((a, b) => a - b)
+
+    return allTimestamps.map((timestamp) => {
+      const at = new Date(timestamp)
+      const fixedPoint = fixedTrend.get(timestamp)
+      const conventionalPoint = conventionalTrend.get(timestamp)
+      const annPoint = annTrend.get(timestamp)
+
+      return {
+        label: formatTrendLabel(at, range),
+        fixedEnergyWh: fixedPoint?.energyWh,
+        conventionalEnergyWh: conventionalPoint?.energyWh,
+        annEnergyWh: annPoint?.energyWh,
+        fixedEfficiencyPct: fixedPoint?.efficiencyPct,
+        conventionalEfficiencyPct: conventionalPoint?.efficiencyPct,
+        annEfficiencyPct: annPoint?.efficiencyPct,
+        fixedAveragePower: fixedPoint?.averagePower,
+        conventionalAveragePower: conventionalPoint?.averagePower,
+        annAveragePower: annPoint?.averagePower,
+      }
+    })
+  }, [readingsByPanel, range])
+
+  const trendChartConfig = useMemo(() => {
+    if (trendMetric === 'efficiency') {
+      return {
+        title: 'Efficiency Trend by Panel',
+        subtitle: `Efficiency trajectory over ${RANGE_CONFIG[range].label.toLowerCase()}.`,
+        formatValue: (value: number) => `${value.toFixed(2)}%`,
+        series: [
+          { key: 'fixedEfficiencyPct', label: 'Fixed Efficiency (%)', color: '#38bdf8', type: 'line' as const },
+          { key: 'conventionalEfficiencyPct', label: 'Conventional Efficiency (%)', color: '#f59e0b', type: 'line' as const },
+          { key: 'annEfficiencyPct', label: 'ANN Efficiency (%)', color: '#84cc16', type: 'line' as const },
+        ],
+      }
+    }
+
+    if (trendMetric === 'power') {
+      return {
+        title: 'Average Power Trend by Panel',
+        subtitle: `Running average power over ${RANGE_CONFIG[range].label.toLowerCase()}.`,
+        formatValue: (value: number) => `${value.toFixed(2)} W`,
+        series: [
+          { key: 'fixedAveragePower', label: 'Fixed Avg Power (W)', color: '#38bdf8', type: 'line' as const },
+          { key: 'conventionalAveragePower', label: 'Conventional Avg Power (W)', color: '#f59e0b', type: 'line' as const },
+          { key: 'annAveragePower', label: 'ANN Avg Power (W)', color: '#84cc16', type: 'line' as const },
+        ],
+      }
+    }
+
+    return {
+      title: 'Total Energy Trend by Panel',
+      subtitle: `Cumulative generated energy over ${RANGE_CONFIG[range].label.toLowerCase()}.`,
+      formatValue: (value: number) => `${value.toFixed(2)} Wh`,
+      series: [
+        { key: 'fixedEnergyWh', label: 'Fixed Total Energy (Wh)', color: '#38bdf8', type: 'line' as const },
+        { key: 'conventionalEnergyWh', label: 'Conventional Total Energy (Wh)', color: '#f59e0b', type: 'line' as const },
+        { key: 'annEnergyWh', label: 'ANN Total Energy (Wh)', color: '#84cc16', type: 'line' as const },
+      ],
+    }
+  }, [trendMetric, range])
 
   const historyRows = useMemo(() => {
     return toHistoryRows(readingsByPanel[activeLogPanel])
@@ -560,15 +700,26 @@ export function OverviewPage() {
 
       <section className="space-y-4">
         <ChartCard
-          title="Energy, Efficiency, and Average Power"
-          subtitle="Core calculated metrics by panel type."
+          title={trendChartConfig.title}
+          subtitle={trendChartConfig.subtitle}
           data={comparisonChartData}
-          series={[
-            { key: 'totalEnergyWh', label: 'Total Energy (Wh)', color: '#38bdf8', type: 'line' },
-            { key: 'efficiencyPct', label: 'Efficiency (%)', color: '#bef264', type: 'line' },
-            { key: 'averagePower', label: 'Average Power (W)', color: '#fbbf24', type: 'line' },
-          ]}
-          formatValue={(value) => value.toFixed(2)}
+          series={trendChartConfig.series}
+          formatValue={trendChartConfig.formatValue}
+          showVerticalGrid
+          headerAction={
+            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+              <span className="whitespace-nowrap">Metric</span>
+              <select
+                value={trendMetric}
+                onChange={(event) => setTrendMetric(event.target.value as TrendMetric)}
+                className="h-10 min-w-[160px] rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+              >
+                <option value="energy">Total Energy</option>
+                <option value="efficiency">Efficiency</option>
+                <option value="power">Avg Power</option>
+              </select>
+            </label>
+          }
         />
 
         <Card>

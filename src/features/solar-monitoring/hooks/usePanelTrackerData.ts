@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { fetchJsonCached } from '@/shared/lib/apiCache'
 import type {
   EnergyPoint,
   HistoryRow,
@@ -36,6 +37,8 @@ type ForecastSeries = {
 let weatherCache: { expiresAt: number; data: ForecastSeries } | null = null
 
 const WEATHER_CACHE_MS = 30 * 60 * 1000
+const PANEL_HISTORY_CACHE_MS = 30 * 1000
+const PANEL_REFRESH_MS = 30 * 1000
 const FORECAST_LATITUDE = 14.5995
 const FORECAST_LONGITUDE = 120.9842
 
@@ -349,7 +352,9 @@ export function usePanelTrackerData(panelKey: PanelKey, range: TimeRange) {
 
       try {
         const [response, forecastSeries] = await Promise.all([
-          fetch(`/api/${panelKey}/history?limit=${limit}`),
+          fetchJsonCached<ApiReading[]>(`/api/${panelKey}/history?limit=${limit}`, {
+            ttlMs: PANEL_HISTORY_CACHE_MS,
+          }),
           getForecastSeries(),
         ])
 
@@ -357,7 +362,7 @@ export function usePanelTrackerData(panelKey: PanelKey, range: TimeRange) {
           throw new Error(`Failed to load ${panelKey} history (${response.status})`)
         }
 
-        const payload = (await response.json()) as ApiReading[]
+        const payload = response.body
         const sorted = [...payload].sort(
           (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
         )
@@ -382,8 +387,10 @@ export function usePanelTrackerData(panelKey: PanelKey, range: TimeRange) {
 
     void load()
     const timer = window.setInterval(() => {
-      void load()
-    }, 5000)
+      if (document.visibilityState === 'visible') {
+        void load()
+      }
+    }, PANEL_REFRESH_MS)
 
     return () => {
       active = false

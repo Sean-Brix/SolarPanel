@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
 import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
 import { cn } from '@/shared/lib/cn'
+import { clearApiCache } from '@/shared/lib/apiCache'
 
 type PanelKey = 'fixed' | 'conventional' | 'ann'
+type DemoPreset = 'quick' | 'demo' | 'extended'
 
 type PanelPayloads = Record<PanelKey, string>
 type ApiResults = Record<string, string>
@@ -68,6 +70,7 @@ async function parseResponseBody(response: Response): Promise<unknown> {
 
 export function DevPage() {
   const [payloads, setPayloads] = useState<PanelPayloads>(defaultPayloads)
+  const [demoPreset, setDemoPreset] = useState<DemoPreset>('demo')
   const [results, setResults] = useState<ApiResults>({})
   const [loading, setLoading] = useState<ApiLoading>({})
 
@@ -89,6 +92,10 @@ export function DevPage() {
 
       const response = await fetch(endpoint, { ...init, headers })
       const body = await parseResponseBody(response)
+
+      if (response.ok && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(init?.method ?? 'GET')) {
+        clearApiCache('/api/')
+      }
 
       setResults((prev) => ({
         ...prev,
@@ -237,6 +244,67 @@ export function DevPage() {
           </section>
         ))}
       </div>
+
+      <section className="rounded-3xl border border-slate-200 bg-white/85 p-4 shadow-sm dark:border-white/10 dark:bg-slate-950/70">
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Dataset Tools</h2>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+          Create realistic demo telemetry for all panels in one request, or wipe everything and start from zero.
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <label className="flex min-w-[180px] flex-col gap-1 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+            Dataset size
+            <select
+              value={demoPreset}
+              onChange={(event) => setDemoPreset(event.target.value as DemoPreset)}
+              className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+            >
+              <option value="quick">Quick demo (~96 rows/panel, 24h)</option>
+              <option value="demo">Balanced demo (~240 rows/panel, 5 days)</option>
+              <option value="extended">Extended demo (~420 rows/panel, 9 days)</option>
+            </select>
+          </label>
+
+          <button
+            type="button"
+            onClick={() =>
+              void callEndpoint('demo-generate', '/api/dev/generate-demo', {
+                method: 'POST',
+                body: JSON.stringify({ preset: demoPreset }),
+              })
+            }
+            disabled={loading['demo-generate']}
+            className="rounded-xl bg-cyan-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-cyan-500 disabled:opacity-60"
+          >
+            {loading['demo-generate'] ? 'Generating dataset...' : 'Generate realistic demo data'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const approved = window.confirm(
+                'Delete all fixed, conventional, and ANN records? This cannot be undone.',
+              )
+
+              if (!approved) {
+                return
+              }
+
+              void callEndpoint('demo-wipe', '/api/dev/panel-logs', {
+                method: 'DELETE',
+              })
+            }}
+            disabled={loading['demo-wipe']}
+            className="rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-60"
+          >
+            {loading['demo-wipe'] ? 'Deleting all records...' : 'Delete all panel logs'}
+          </button>
+        </div>
+
+        <pre className="mt-3 max-h-64 overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200">
+          {results['demo-generate'] || results['demo-wipe'] || '{\n  "info": "No dataset action yet"\n}'}
+        </pre>
+      </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white/85 p-4 shadow-sm dark:border-white/10 dark:bg-slate-950/70">
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Global Endpoints</h2>
