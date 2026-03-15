@@ -59,11 +59,11 @@ const PANEL_AREA_M2 = 1.6
 type OverviewRange = 'hour' | 'day' | 'week' | 'month' | 'all'
 
 const RANGE_CONFIG: Record<OverviewRange, { label: string; sinceMs?: number; limit: number }> = {
+  all: { label: 'All time', limit: 100_000 },
   hour: { label: 'Last hour', sinceMs: 60 * 60 * 1000, limit: 120 },
   day: { label: 'Last 24 hours', sinceMs: 24 * 60 * 60 * 1000, limit: 2_000 },
   week: { label: 'Last 7 days', sinceMs: 7 * 24 * 60 * 60 * 1000, limit: 10_000 },
   month: { label: 'Last 30 days', sinceMs: 30 * 24 * 60 * 60 * 1000, limit: 10_000 },
-  all: { label: 'All time', limit: 100_000 },
 }
 
 function average(values: number[]) {
@@ -167,7 +167,7 @@ function toHistoryRows(rows: NormalizedReading[]): HistoryRow[] {
 }
 
 export function OverviewPage() {
-  const [range, setRange] = useState<OverviewRange>('day')
+  const [range, setRange] = useState<OverviewRange>('all')
   const [activeLogPanel, setActiveLogPanel] = useState<PanelKey>('fixed')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -559,53 +559,6 @@ export function OverviewPage() {
       </Card>
 
       <section className="space-y-4">
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="h-full">
-            <CardHeader className="min-h-[130px]">
-              <CardTitle>Which Panel Produces Most Energy?</CardTitle>
-              <CardDescription>Total energy winner for the selected range.</CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <p className="text-xl font-semibold text-slate-900 dark:text-white">
-                {PANEL_LABEL[topEnergy.panel]}
-              </p>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                {topEnergy.totalEnergyWh.toFixed(2)} Wh total
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="h-full">
-            <CardHeader className="min-h-[130px]">
-              <CardTitle>Which Panel Is Most Efficient?</CardTitle>
-              <CardDescription>Efficiency computed from energy and irradiance input.</CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <p className="text-xl font-semibold text-slate-900 dark:text-white">
-                {PANEL_LABEL[topEfficiency.panel]}
-              </p>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                {topEfficiency.efficiencyPct.toFixed(2)}%
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="h-full">
-            <CardHeader className="min-h-[130px]">
-              <CardTitle>Tracking Improvement vs Fixed</CardTitle>
-              <CardDescription>Gain (%) = ((Energy_tracker - Energy_fixed) / Energy_fixed) * 100</CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0 space-y-1 text-sm">
-              <p className="text-slate-700 dark:text-slate-300">
-                Conventional: <span className="font-semibold">{conventionalGain.toFixed(2)}%</span>
-              </p>
-              <p className="text-slate-700 dark:text-slate-300">
-                ANN: <span className="font-semibold">{annGain.toFixed(2)}%</span>
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
         <ChartCard
           title="Energy, Efficiency, and Average Power"
           subtitle="Core calculated metrics by panel type."
@@ -670,6 +623,53 @@ export function OverviewPage() {
           </CardContent>
         </Card>
       </section>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="h-full">
+          <CardHeader className="min-h-[130px]">
+            <CardTitle>Which Panel Produces Most Energy?</CardTitle>
+            <CardDescription>Total energy winner for the selected range.</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <p className="text-xl font-semibold text-slate-900 dark:text-white">
+              {PANEL_LABEL[topEnergy.panel]}
+            </p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              {topEnergy.totalEnergyWh.toFixed(2)} Wh total
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="h-full">
+          <CardHeader className="min-h-[130px]">
+            <CardTitle>Which Panel Is Most Efficient?</CardTitle>
+            <CardDescription>Efficiency computed from energy and irradiance input.</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <p className="text-xl font-semibold text-slate-900 dark:text-white">
+              {PANEL_LABEL[topEfficiency.panel]}
+            </p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              {topEfficiency.efficiencyPct.toFixed(2)}%
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="h-full">
+          <CardHeader className="min-h-[130px]">
+            <CardTitle>Tracking Improvement vs Fixed</CardTitle>
+            <CardDescription>Gain (%) = ((Energy_tracker - Energy_fixed) / Energy_fixed) * 100</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-1 text-sm">
+            <p className="text-slate-700 dark:text-slate-300">
+              Conventional: <span className="font-semibold">{conventionalGain.toFixed(2)}%</span>
+            </p>
+            <p className="text-slate-700 dark:text-slate-300">
+              ANN: <span className="font-semibold">{annGain.toFixed(2)}%</span>
+            </p>
+          </CardContent>
+        </Card>
+      </div>
 
       <section className="space-y-4">
         <Card>

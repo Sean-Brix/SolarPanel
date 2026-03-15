@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
@@ -82,6 +82,10 @@ function AuthRouteFrame({ children }: { children: React.ReactNode }) {
 
 export function AppRouter() {
   const location = useLocation()
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [location.pathname])
 
   return (
     <AnimatePresence mode="wait">

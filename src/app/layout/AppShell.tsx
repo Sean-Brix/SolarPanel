@@ -5,6 +5,7 @@ import {
   Code2,
   Download,
   Gauge,
+  LogOut,
   Moon,
   MoreHorizontal,
   PanelRightOpen,
@@ -13,7 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '@/app/providers/useTheme'
 import { usePwaInstall } from '@/hooks/usePwaInstall'
 import { cn } from '@/shared/lib/cn'
@@ -23,7 +24,7 @@ const navItems = [
   { label: 'Fixed Panel', shortLabel: 'Fixed', path: '/fixed-panel', icon: SunMedium },
   {
     label: 'Conventional Panel',
-    shortLabel: 'Track',
+    shortLabel: 'Conve',
     path: '/conventional-panel',
     icon: Activity,
   },
@@ -36,7 +37,7 @@ const navItems = [
   },
 ]
 
-const primaryMobilePaths = ['/overview', '/ann-panel', '/dev']
+const primaryMobilePaths = ['/overview', '/fixed-panel', '/conventional-panel', '/ann-panel']
 const primaryMobileNav = navItems.filter((item) => primaryMobilePaths.includes(item.path))
 const secondaryMobileNav = navItems.filter((item) => !primaryMobilePaths.includes(item.path))
 
@@ -67,6 +68,7 @@ function ThemeButton({
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation()
+  const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const [ready, setReady] = useState(false)
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
@@ -80,15 +82,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const isSecondaryRoute = secondaryMobileNav.some((item) => item.path === location.pathname)
 
+  const handleLogout = async () => {
+    const token = localStorage.getItem('token')
+
+    try {
+      if (token) {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+      }
+    } catch {
+      // Logout is client-driven; still clear local token if server call fails.
+    } finally {
+      localStorage.removeItem('token')
+      setMobileMoreOpen(false)
+      navigate('/login')
+    }
+  }
+
   if (isAuthRoute) {
     return <div className="relative min-h-screen overflow-hidden">{children}</div>
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
+    <div className="relative min-h-screen overflow-x-hidden">
       <div className="relative mx-auto flex min-h-screen max-w-[1600px] flex-col gap-6 px-4 py-4 lg:flex-row lg:px-6">
-        <aside className="hidden w-[280px] shrink-0 lg:block">
-          <div className="sticky top-4 flex h-[calc(100vh-2rem)] flex-col rounded-3xl border border-slate-200 bg-white/85 p-6 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-950/75">
+        <aside className="hidden w-[280px] shrink-0 lg:sticky lg:top-4 lg:block lg:h-[calc(100vh-2rem)]">
+          <div className="flex h-full flex-col rounded-3xl border border-slate-200 bg-white/85 p-6 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-950/75">
             <div className="mb-8 flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.24em] text-cyan-700 dark:text-cyan-200/80">
@@ -245,6 +268,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <span>{label}</span>
                   </NavLink>
                 ))}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleLogout()
+                  }}
+                  className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300 dark:hover:bg-white/[0.05]"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Logout</span>
+                </button>
               </div>
 
               <div className="mt-3 border-t border-slate-200 px-2 pt-3 dark:border-white/10">
@@ -269,7 +303,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </AnimatePresence>
 
       <div className="fixed inset-x-4 bottom-4 z-50 lg:hidden">
-        <div className="grid grid-cols-4 gap-2 rounded-3xl border border-slate-200 bg-white/96 p-2 shadow-xl backdrop-blur dark:border-white/10 dark:bg-slate-950/96">
+        <div className="grid grid-cols-5 gap-2 rounded-3xl border border-slate-200 bg-white/96 p-2 shadow-xl backdrop-blur dark:border-white/10 dark:bg-slate-950/96">
           {primaryMobileNav.map(({ icon: Icon, path, shortLabel }) => {
             const isActive = location.pathname === path
 
