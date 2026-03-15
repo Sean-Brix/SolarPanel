@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
 import { cn } from '@/shared/lib/cn'
-import type { TimeRange } from '@/shared/types/solar'
 
 type PanelKey = 'fixed' | 'conventional' | 'ann'
 
@@ -71,7 +70,6 @@ export function DevPage() {
   const [payloads, setPayloads] = useState<PanelPayloads>(defaultPayloads)
   const [results, setResults] = useState<ApiResults>({})
   const [loading, setLoading] = useState<ApiLoading>({})
-  const [range, setRange] = useState<TimeRange>('daily')
 
   const token = useMemo(() => localStorage.getItem('token'), [])
 
@@ -169,8 +167,6 @@ export function DevPage() {
         connection="Live API testing"
         status="optimal"
         lastUpdated={new Date()}
-        range={range}
-        onRangeChange={setRange}
       />
 
       <div className="rounded-3xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm text-slate-700 dark:text-amber-100">

@@ -1,8 +1,6 @@
-import { Activity, Clock3, Cpu } from 'lucide-react'
+import { Clock3, Cpu } from 'lucide-react'
 import { formatDateTime } from '@/shared/lib/formatters'
-import type { TimeRange } from '@/shared/types/solar'
 import { StatusBadge } from './StatusBadge'
-import { TimeRangeTabs } from './TimeRangeTabs'
 import { Card, CardContent } from '@/shared/ui/card'
 
 type PageHeaderProps = {
@@ -12,8 +10,6 @@ type PageHeaderProps = {
   connection: string
   status: string
   lastUpdated: Date
-  range: TimeRange
-  onRangeChange: (value: TimeRange) => void
 }
 
 export function PageHeader({
@@ -23,8 +19,6 @@ export function PageHeader({
   connection,
   status,
   lastUpdated,
-  range,
-  onRangeChange,
 }: PageHeaderProps) {
   return (
     <Card className="overflow-hidden">
@@ -67,14 +61,6 @@ export function PageHeader({
               </p>
             </div>
           </div>
-        </div>
-
-        <div className="mt-6 flex flex-col gap-4 rounded-[24px] border border-slate-200 dark:border-white/10 bg-white/85 dark:bg-slate-950/55 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-300">
-            <Activity className="h-4 w-4 text-cyan-300" />
-            <span>Time window</span>
-          </div>
-          <TimeRangeTabs value={range} onChange={onRangeChange} />
         </div>
       </CardContent>
     </Card>

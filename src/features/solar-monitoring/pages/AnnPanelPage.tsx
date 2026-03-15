@@ -1,4 +1,4 @@
-import { useState, useTransition } from 'react'
+import { useMemo } from 'react'
 import {
   BatteryCharging,
   CloudSun,
@@ -28,8 +28,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/sha
 
 export function AnnPanelPage() {
   const panel = panels.ann
-  const [range, setRange] = useState<TimeRange>('live')
-  const [, startTransition] = useTransition()
+  const range = useMemo<TimeRange>(() => 'daily', [])
   const telemetry = usePanelTrackerData('ann', range)
   const sample = telemetry.sample ?? {
     label: 'N/A',
@@ -50,8 +49,6 @@ export function AnnPanelPage() {
         connection={panel.connection}
         status={panel.status}
         lastUpdated={telemetry.lastUpdated}
-        range={range}
-        onRangeChange={(nextRange) => startTransition(() => setRange(nextRange))}
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">

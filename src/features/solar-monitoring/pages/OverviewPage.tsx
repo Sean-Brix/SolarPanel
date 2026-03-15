@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChartCard } from '@/features/solar-monitoring/components/ChartCard'
 import { HistoricalLogTable } from '@/features/solar-monitoring/components/HistoricalLogTable'
 import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
@@ -162,9 +162,8 @@ function toHistoryRows(rows: NormalizedReading[]): HistoryRow[] {
 }
 
 export function OverviewPage() {
-  const [range, setRange] = useState<TimeRange>('hourly')
+  const range: TimeRange = 'daily'
   const [activeLogPanel, setActiveLogPanel] = useState<PanelKey>('fixed')
-  const [, startTransition] = useTransition()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [readingsByPanel, setReadingsByPanel] = useState<Record<PanelKey, NormalizedReading[]>>({
@@ -340,8 +339,6 @@ export function OverviewPage() {
         connection={`${readingsByPanel.fixed.length + readingsByPanel.conventional.length + readingsByPanel.ann.length} readings aggregated`}
         status={error ? 'warning' : 'optimal'}
         lastUpdated={latestTimestamp}
-        range={range}
-        onRangeChange={(nextRange) => startTransition(() => setRange(nextRange))}
       />
 
       <section className="space-y-4">

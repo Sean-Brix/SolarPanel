@@ -7,68 +7,56 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ─── Fixed Panel ────────────────────────────────────────────────────────────
-// Static panel facing one fixed direction. No movement hardware.
-// Payload: voltage, current, power only.
 model FixedReading {
-  id        Int      @id @default(autoincrement())
-  voltage   Float    // V
-  current   Float    // A
-  power     Float    // W  (computed on the ESP32 as V × I)
-  energyKwh Float    @default(0) // interval energy (kWh) computed from time + power
-  cumulativeEnergyKwh Float @default(0) // running total energy (kWh)
-  createdAt DateTime @default(now())
+  id                  Int      @id @default(autoincrement())
+  voltage             Float
+  current             Float
+  power               Float
+  createdAt           DateTime @default(now())
+  energyKwh           Float    @default(0)
+  cumulativeEnergyKwh Float    @default(0)
 
   @@map("fixed_readings")
 }
 
-// ─── Conventional Panel ──────────────────────────────────────────────────────
-// Motorised tracker – follows the sun continuously using IMU + LDR sensors.
-// Payload: voltage, current, power + 3-axis IMU + 4 LDR states.
 model ConventionalReading {
-  id        Int      @id @default(autoincrement())
-  voltage   Float    // V
-  current   Float    // A
-  power     Float    // W
-  energyKwh Float    @default(0) // interval energy (kWh) computed from time + power
-  cumulativeEnergyKwh Float @default(0) // running total energy (kWh)
-  axisX     Float    // IMU X-axis (degrees or raw)
-  axisY     Float    // IMU Y-axis
-  axisZ     Float    // IMU Z-axis
-  ldrTop    Int      // 1 = light detected, 0 = dark
-  ldrBottom Int
-  ldrLeft   Int
-  ldrRight  Int
-  createdAt DateTime @default(now())
+  id                  Int      @id @default(autoincrement())
+  voltage             Float
+  current             Float
+  power               Float
+  axisX               Float
+  axisY               Float
+  axisZ               Float
+  ldrTop              Int
+  ldrBottom           Int
+  ldrLeft             Int
+  ldrRight            Int
+  createdAt           DateTime @default(now())
+  energyKwh           Float    @default(0)
+  cumulativeEnergyKwh Float    @default(0)
 
   @@map("conventional_readings")
 }
 
-// ─── ANN Panel ───────────────────────────────────────────────────────────────
-// Smart tracker – moves only when the ANN model predicts a net gain.
-// Skips movement in cloudy / low-gain conditions using weather forecast.
-// Same physical sensors as the conventional panel.
 model AnnReading {
-  id        Int      @id @default(autoincrement())
-  voltage   Float    // V
-  current   Float    // A
-  power     Float    // W
-  energyKwh Float    @default(0) // interval energy (kWh) computed from time + power
-  cumulativeEnergyKwh Float @default(0) // running total energy (kWh)
-  axisX     Float    // IMU X-axis
-  axisY     Float    // IMU Y-axis
-  axisZ     Float    // IMU Z-axis
-  ldrTop    Int      // 1 = light, 0 = dark
-  ldrBottom Int
-  ldrLeft   Int
-  ldrRight  Int
-  createdAt DateTime @default(now())
+  id                  Int      @id @default(autoincrement())
+  voltage             Float
+  current             Float
+  power               Float
+  axisX               Float
+  axisY               Float
+  axisZ               Float
+  ldrTop              Int
+  ldrBottom           Int
+  ldrLeft             Int
+  ldrRight            Int
+  createdAt           DateTime @default(now())
+  energyKwh           Float    @default(0)
+  cumulativeEnergyKwh Float    @default(0)
 
   @@map("ann_readings")
 }
 
-// ─── Admin ───────────────────────────────────────────────────────────────────
-// Admin accounts for dashboard login. Passwords are stored as bcrypt hashes.
 model Admin {
   id           Int      @id @default(autoincrement())
   username     String   @unique

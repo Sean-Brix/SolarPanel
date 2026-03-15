@@ -5,7 +5,8 @@
 
 */
 -- DropTable
-DROP TABLE `panel`;
+DROP TABLE IF EXISTS `panel`;
+DROP TABLE IF EXISTS `Panel`;
 
 -- CreateTable
 CREATE TABLE `fixed_readings` (

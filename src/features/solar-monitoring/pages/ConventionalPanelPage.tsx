@@ -1,4 +1,4 @@
-import { useState, useTransition } from 'react'
+import { useMemo } from 'react'
 import { BatteryCharging, GaugeCircle, Orbit, Repeat2, Waves } from 'lucide-react'
 import { ChartCard } from '@/features/solar-monitoring/components/ChartCard'
 import { HistoricalLogTable } from '@/features/solar-monitoring/components/HistoricalLogTable'
@@ -12,8 +12,7 @@ import type { TimeRange } from '@/shared/types/solar'
 
 export function ConventionalPanelPage() {
   const panel = panels.conventional
-  const [range, setRange] = useState<TimeRange>('live')
-  const [, startTransition] = useTransition()
+  const range = useMemo<TimeRange>(() => 'daily', [])
   const telemetry = usePanelTrackerData('conventional', range)
   const sample = telemetry.sample ?? {
     label: 'N/A',
@@ -34,8 +33,6 @@ export function ConventionalPanelPage() {
         connection={panel.connection}
         status={panel.status}
         lastUpdated={telemetry.lastUpdated}
-        range={range}
-        onRangeChange={(nextRange) => startTransition(() => setRange(nextRange))}
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">

@@ -1,12 +1,13 @@
 import cors from 'cors'
 import dotenv from 'dotenv'
 import express from 'express'
+import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { PrismaClient } from '@prisma/client'
 import fixedRouter from './routes/fixed.js'
 import conventionalRouter from './routes/conventional.js'
 import annRouter from './routes/ann.js'
 import authRouter from './routes/auth.js'
+import { prisma } from './lib/prisma.js'
 
 // Support both run modes:
 // 1) `npm run dev` inside `server/` (loads `.env`)
@@ -14,7 +15,9 @@ import authRouter from './routes/auth.js'
 dotenv.config()
 dotenv.config({ path: 'server/.env' })
 
-const prisma = new PrismaClient()
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
 const app = express()
 const port = Number(process.env.PORT ?? 4000)
 
@@ -50,7 +53,7 @@ app.get('/api/overview/latest', async (_req, res) => {
 // ─── React SPA static serving ────────────────────────────────────────────
 // Serve the Vite build output (written to server/public by `npm run build`).
 // Must come AFTER all /api routes.
-const uiDir = path.resolve('server/public')
+const uiDir = path.resolve(__dirname, '../public')
 app.use(express.static(uiDir))
 
 // SPA catch-all: any non-API, non-file request returns index.html so React

@@ -1,9 +1,8 @@
 import { Router } from 'express'
-import { PrismaClient } from '@prisma/client'
+import { enqueueWrite } from '../lib/writeQueue.js'
+import { prisma } from '../lib/prisma.js'
 
 const router = Router()
-const prisma = new PrismaClient()
-
 /**
  * POST /api/conventional
  * ESP32 pushes a new Conventional panel reading.
@@ -14,60 +13,83 @@ const prisma = new PrismaClient()
  * }
  */
 router.post('/', async (req, res) => {
-  const { voltage, current, power, axisX, axisY, axisZ, ldrTop, ldrBottom, ldrLeft, ldrRight } =
-    req.body
+  const payload = Array.isArray(req.body) ? req.body : [req.body]
 
-  if (
-    typeof voltage !== 'number' ||
-    typeof current !== 'number' ||
-    typeof power !== 'number' ||
-    typeof axisX !== 'number' ||
-    typeof axisY !== 'number' ||
-    typeof axisZ !== 'number' ||
-    ![0, 1].includes(ldrTop) ||
-    ![0, 1].includes(ldrBottom) ||
-    ![0, 1].includes(ldrLeft) ||
-    ![0, 1].includes(ldrRight)
-  ) {
-    return res.status(400).json({
-      message:
-        'voltage, current, power, axisX, axisY, axisZ are required numbers; ldrTop/Bottom/Left/Right must be 0 or 1',
-    })
+  if (payload.length < 1 || payload.length > 100) {
+    return res.status(400).json({ message: 'request body must contain 1 to 100 readings' })
   }
 
-  const now = new Date()
-  const previous = await prisma.conventionalReading.findFirst({
-    orderBy: { createdAt: 'desc' },
-    select: { createdAt: true, cumulativeEnergyKwh: true },
+  for (const item of payload) {
+    if (
+      !item ||
+      typeof item.voltage !== 'number' ||
+      typeof item.current !== 'number' ||
+      typeof item.power !== 'number' ||
+      typeof item.axisX !== 'number' ||
+      typeof item.axisY !== 'number' ||
+      typeof item.axisZ !== 'number' ||
+      ![0, 1].includes(item.ldrTop) ||
+      ![0, 1].includes(item.ldrBottom) ||
+      ![0, 1].includes(item.ldrLeft) ||
+      ![0, 1].includes(item.ldrRight)
+    ) {
+      return res.status(400).json({
+        message:
+          'each reading requires voltage/current/power/axisX/axisY/axisZ numbers and ldrTop/Bottom/Left/Right as 0 or 1',
+      })
+    }
+  }
+
+  const result = await enqueueWrite(async () => {
+    const previous = await prisma.conventionalReading.findFirst({
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true, cumulativeEnergyKwh: true },
+    })
+
+    let runningCumulative = previous?.cumulativeEnergyKwh ?? 0
+    let lastTime = previous?.createdAt ?? new Date(Date.now() - 60_000)
+
+    const rows = payload.map((item, index) => {
+      const currentTime = new Date(lastTime.getTime() + (index > 0 ? 60_000 : 0))
+      const deltaHours = Math.max((currentTime.getTime() - lastTime.getTime()) / 3_600_000, 1 / 60)
+
+      const computedPower = item.voltage * item.current
+      const effectivePower = item.power > 0 ? (item.power + computedPower) / 2 : computedPower
+      const energyKwh = Number(((effectivePower * deltaHours) / 1000).toFixed(6))
+
+      runningCumulative = Number((runningCumulative + energyKwh).toFixed(6))
+      lastTime = currentTime
+
+      return {
+        voltage: item.voltage,
+        current: item.current,
+        power: item.power,
+        energyKwh,
+        cumulativeEnergyKwh: runningCumulative,
+        axisX: item.axisX,
+        axisY: item.axisY,
+        axisZ: item.axisZ,
+        ldrTop: item.ldrTop,
+        ldrBottom: item.ldrBottom,
+        ldrLeft: item.ldrLeft,
+        ldrRight: item.ldrRight,
+      }
+    })
+
+    if (rows.length === 1) {
+      const created = await prisma.conventionalReading.create({ data: rows[0] })
+      return { type: 'single' as const, created }
+    }
+
+    await prisma.conventionalReading.createMany({ data: rows })
+    return { type: 'batch' as const, count: rows.length }
   })
 
-  const deltaHours = previous
-    ? Math.max((now.getTime() - previous.createdAt.getTime()) / 3_600_000, 0)
-    : 1 / 60
+  if (result.type === 'single') {
+    return res.status(201).json(result.created)
+  }
 
-  const computedPower = voltage * current
-  const effectivePower = power > 0 ? (power + computedPower) / 2 : computedPower
-  const energyKwh = Number(((effectivePower * deltaHours) / 1000).toFixed(6))
-  const cumulativeEnergyKwh = Number(((previous?.cumulativeEnergyKwh ?? 0) + energyKwh).toFixed(6))
-
-  const reading = await prisma.conventionalReading.create({
-    data: {
-      voltage,
-      current,
-      power,
-      energyKwh,
-      cumulativeEnergyKwh,
-      axisX,
-      axisY,
-      axisZ,
-      ldrTop,
-      ldrBottom,
-      ldrLeft,
-      ldrRight,
-    },
-  })
-
-  return res.status(201).json(reading)
+  return res.status(201).json({ message: 'batch accepted', inserted: result.count })
 })
 
 /**

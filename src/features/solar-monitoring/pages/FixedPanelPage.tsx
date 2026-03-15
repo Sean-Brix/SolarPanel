@@ -1,4 +1,4 @@
-import { useState, useTransition } from 'react'
+import { useMemo } from 'react'
 import { BatteryCharging, GaugeCircle, LineChart, SunMedium, Waves } from 'lucide-react'
 import { ChartCard } from '@/features/solar-monitoring/components/ChartCard'
 import { HistoricalLogTable } from '@/features/solar-monitoring/components/HistoricalLogTable'
@@ -11,8 +11,7 @@ import type { TimeRange } from '@/shared/types/solar'
 
 export function FixedPanelPage() {
   const panel = panels.fixed
-  const [range, setRange] = useState<TimeRange>('live')
-  const [, startTransition] = useTransition()
+  const range = useMemo<TimeRange>(() => 'daily', [])
   const telemetry = usePanelTrackerData('fixed', range)
   const sample = telemetry.sample ?? {
     label: 'N/A',
@@ -31,8 +30,6 @@ export function FixedPanelPage() {
         connection={panel.connection}
         status={panel.status}
         lastUpdated={telemetry.lastUpdated}
-        range={range}
-        onRangeChange={(nextRange) => startTransition(() => setRange(nextRange))}
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
