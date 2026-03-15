@@ -112,11 +112,11 @@ router.get('/latest', async (_req, res) => {
  * GET /api/conventional/history?limit=50&since=ISO_DATE
  * Returns recent Conventional panel readings, newest first.
  * Query params:
- *   limit  – max records to return (default 50, max 500)
+ *   limit  – max records to return (default 50, max 100000)
  *   since  – ISO 8601 date string; only return records after this timestamp
  */
 router.get('/history', async (req, res) => {
-  const limit = Math.min(Number(req.query.limit ?? 50), 500)
+  const limit = Math.min(Number(req.query.limit ?? 50), 100000)
   const since = typeof req.query.since === 'string' ? new Date(req.query.since) : undefined
 
   if (Number.isNaN(limit) || limit < 1) {

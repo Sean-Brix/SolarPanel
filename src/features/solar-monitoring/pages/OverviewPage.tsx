@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Download } from 'lucide-react'
 import { ChartCard } from '@/features/solar-monitoring/components/ChartCard'
 import { HistoricalLogTable } from '@/features/solar-monitoring/components/HistoricalLogTable'
 import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/ui/card'
-import type { HistoryRow, PanelKey, TimeRange } from '@/shared/types/solar'
+import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
+import type { HistoryRow, PanelKey } from '@/shared/types/solar'
 
 type BackendReading = {
   createdAt?: string
@@ -54,11 +56,14 @@ const PANEL_LABEL: Record<PanelKey, string> = {
 
 const PANEL_AREA_M2 = 1.6
 
-const RANGE_LIMITS: Record<TimeRange, number> = {
-  live: 40,
-  hourly: 120,
-  daily: 360,
-  weekly: 1200,
+type OverviewRange = 'hour' | 'day' | 'week' | 'month' | 'all'
+
+const RANGE_CONFIG: Record<OverviewRange, { label: string; sinceMs?: number; limit: number }> = {
+  hour: { label: 'Last hour', sinceMs: 60 * 60 * 1000, limit: 120 },
+  day: { label: 'Last 24 hours', sinceMs: 24 * 60 * 60 * 1000, limit: 2_000 },
+  week: { label: 'Last 7 days', sinceMs: 7 * 24 * 60 * 60 * 1000, limit: 10_000 },
+  month: { label: 'Last 30 days', sinceMs: 30 * 24 * 60 * 60 * 1000, limit: 10_000 },
+  all: { label: 'All time', limit: 100_000 },
 }
 
 function average(values: number[]) {
@@ -162,7 +167,7 @@ function toHistoryRows(rows: NormalizedReading[]): HistoryRow[] {
 }
 
 export function OverviewPage() {
-  const range: TimeRange = 'daily'
+  const [range, setRange] = useState<OverviewRange>('day')
   const [activeLogPanel, setActiveLogPanel] = useState<PanelKey>('fixed')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -175,8 +180,12 @@ export function OverviewPage() {
   useEffect(() => {
     let active = true
 
-    const fetchPanelReadings = async (panel: PanelKey, limit: number) => {
-      const response = await fetch(`/api/${panel}/history?limit=${limit}`)
+    const fetchPanelReadings = async (panel: PanelKey, limit: number, since?: Date) => {
+      const query = new URLSearchParams({ limit: String(limit) })
+      if (since) {
+        query.set('since', since.toISOString())
+      }
+      const response = await fetch(`/api/${panel}/history?${query.toString()}`)
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -216,11 +225,12 @@ export function OverviewPage() {
       setError(null)
 
       try {
-        const limit = RANGE_LIMITS[range]
+        const config = RANGE_CONFIG[range]
+        const since = config.sinceMs ? new Date(Date.now() - config.sinceMs) : undefined
         const [fixed, conventional, ann] = await Promise.all([
-          fetchPanelReadings('fixed', limit),
-          fetchPanelReadings('conventional', limit),
-          fetchPanelReadings('ann', limit),
+          fetchPanelReadings('fixed', config.limit, since),
+          fetchPanelReadings('conventional', config.limit, since),
+          fetchPanelReadings('ann', config.limit, since),
         ])
 
         if (!active) {
@@ -330,16 +340,223 @@ export function OverviewPage() {
     return toHistoryRows(readingsByPanel[activeLogPanel])
   }, [activeLogPanel, readingsByPanel])
 
+  const totalGeneratedKwh = useMemo(() => {
+    return metrics.list.reduce((sum, item) => sum + item.totalEnergyWh, 0) / 1000
+  }, [metrics])
+
+  async function handleExportExcel() {
+    const xlsx = await import('xlsx')
+    const fixedLogs = toHistoryRows(readingsByPanel.fixed)
+    const conventionalLogs = toHistoryRows(readingsByPanel.conventional)
+    const annLogs = toHistoryRows(readingsByPanel.ann)
+
+    const summaryRows = [
+      { Metric: 'Range', Value: RANGE_CONFIG[range].label },
+      { Metric: 'Total Generated (kWh)', Value: totalGeneratedKwh.toFixed(3) },
+      ...metrics.list.map((item) => ({
+        Metric: `${PANEL_LABEL[item.panel]} Generated (kWh)`,
+        Value: (item.totalEnergyWh / 1000).toFixed(3),
+      })),
+    ]
+
+    const comparisonRows = metrics.list.map((item) => ({
+      Panel: PANEL_LABEL[item.panel],
+      'Avg Power (W)': item.averagePower.toFixed(2),
+      'Max Power (W)': item.maximumPower.toFixed(2),
+      'Avg Energy (Wh)': item.averageEnergyWh.toFixed(4),
+      'Max Energy (Wh)': item.maximumEnergyWh.toFixed(4),
+      'Total Energy (Wh)': item.totalEnergyWh.toFixed(2),
+      'Efficiency (%)': item.efficiencyPct.toFixed(2),
+      'Avg Irradiance (W/m2)': item.averageIrradiance.toFixed(2),
+      'Avg Temp (C)': item.averageTemperature.toFixed(2),
+      'Tracker Movement (deg)': item.panel === 'fixed' ? 'N/A' : item.trackerMovementDeg.toFixed(2),
+    }))
+
+    const workbook = xlsx.utils.book_new()
+    const summarySheet = xlsx.utils.json_to_sheet(summaryRows)
+    const comparisonSheet = xlsx.utils.json_to_sheet(comparisonRows)
+    const fixedLogSheet = xlsx.utils.json_to_sheet(fixedLogs)
+    const conventionalLogSheet = xlsx.utils.json_to_sheet(conventionalLogs)
+    const annLogSheet = xlsx.utils.json_to_sheet(annLogs)
+
+    xlsx.utils.book_append_sheet(workbook, summarySheet, 'Summary')
+    xlsx.utils.book_append_sheet(workbook, comparisonSheet, 'Comparison')
+    xlsx.utils.book_append_sheet(workbook, fixedLogSheet, 'Fixed Logs')
+    xlsx.utils.book_append_sheet(workbook, conventionalLogSheet, 'Conventional Logs')
+    xlsx.utils.book_append_sheet(workbook, annLogSheet, 'ANN Logs')
+
+    xlsx.writeFile(workbook, `overview-${range}-report.xlsx`)
+  }
+
+  async function handleExportPdf() {
+    const { default: jsPDF } = await import('jspdf')
+    const autoTable = (await import('jspdf-autotable/es')).default
+    const fixedLogs = toHistoryRows(readingsByPanel.fixed)
+    const conventionalLogs = toHistoryRows(readingsByPanel.conventional)
+    const annLogs = toHistoryRows(readingsByPanel.ann)
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
+    const generatedAt = new Date().toLocaleString('en-US')
+
+    doc.setFontSize(16)
+    doc.text('HelioScope Overview Report', 40, 40)
+    doc.setFontSize(10)
+    doc.text(`Range: ${RANGE_CONFIG[range].label}`, 40, 60)
+    doc.text(`Generated: ${generatedAt}`, 40, 74)
+
+    autoTable(doc, {
+      startY: 92,
+      head: [['Metric', 'Value']],
+      body: [
+        ['Total Generated (kWh)', totalGeneratedKwh.toFixed(3)],
+        ...metrics.list.map((item) => [
+          `${PANEL_LABEL[item.panel]} Generated (kWh)`,
+          (item.totalEnergyWh / 1000).toFixed(3),
+        ]),
+      ],
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [15, 23, 42] },
+    })
+
+    const lastTableY = (doc as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY
+
+    autoTable(doc, {
+      startY: lastTableY ? lastTableY + 18 : 180,
+      head: [[
+        'Panel',
+        'Avg Power (W)',
+        'Max Power (W)',
+        'Avg Energy (Wh)',
+        'Max Energy (Wh)',
+        'Total Energy (Wh)',
+        'Efficiency (%)',
+      ]],
+      body: metrics.list.map((item) => [
+        PANEL_LABEL[item.panel],
+        item.averagePower.toFixed(2),
+        item.maximumPower.toFixed(2),
+        item.averageEnergyWh.toFixed(4),
+        item.maximumEnergyWh.toFixed(4),
+        item.totalEnergyWh.toFixed(2),
+        item.efficiencyPct.toFixed(2),
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [8, 145, 178] },
+    })
+
+    const logSections: Array<{ title: string; rows: HistoryRow[] }> = [
+      { title: 'Fixed Historical Logs', rows: fixedLogs },
+      { title: 'Conventional Historical Logs', rows: conventionalLogs },
+      { title: 'ANN Historical Logs', rows: annLogs },
+    ]
+
+    logSections.forEach((section) => {
+      doc.addPage()
+      doc.setFontSize(14)
+      doc.text(section.title, 40, 40)
+
+      autoTable(doc, {
+        startY: 56,
+        head: [[
+          'Timestamp',
+          'Panel',
+          'Voltage',
+          'Current',
+          'Power',
+          'Energy',
+          'Azimuth',
+          'Elevation',
+        ]],
+        body: section.rows.map((row) => [
+          row.timestamp,
+          PANEL_LABEL[row.panel],
+          row.voltage.toFixed(2),
+          row.current.toFixed(2),
+          row.power.toFixed(2),
+          row.energy.toFixed(4),
+          row.azimuth !== undefined ? row.azimuth.toFixed(2) : 'N/A',
+          row.elevation !== undefined ? row.elevation.toFixed(2) : 'N/A',
+        ]),
+        styles: { fontSize: 7 },
+        headStyles: { fillColor: [15, 23, 42] },
+      })
+    })
+
+    doc.save(`overview-${range}-report.pdf`)
+  }
+
   return (
     <div className="space-y-4 pb-10">
       <PageHeader
         eyebrow="Performance comparison"
         title="Panel Performance Overview"
-        description="Compare output and efficiency metrics computed from backend sensor readings."
+        description={`Compare output and efficiency metrics for ${RANGE_CONFIG[range].label.toLowerCase()}.`}
         connection={`${readingsByPanel.fixed.length + readingsByPanel.conventional.length + readingsByPanel.ann.length} readings aggregated`}
         status={error ? 'warning' : 'optimal'}
         lastUpdated={latestTimestamp}
       />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Date Range</CardTitle>
+          <CardDescription>
+            Select a period to view total generated energy and performance metrics.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Tabs value={range} onValueChange={(nextValue) => setRange(nextValue as OverviewRange)}>
+              <TabsList className="w-full gap-1 sm:w-auto sm:gap-0">
+                {Object.keys(RANGE_CONFIG).map((value) => (
+                  <TabsTrigger key={value} value={value} className="flex-1 sm:flex-none">
+                    {value}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  void handleExportPdf()
+                }}
+                className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <Download className="h-4 w-4" />
+                Export PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleExportExcel()
+                }}
+                className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <Download className="h-4 w-4" />
+                Export Excel
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]">
+            <div className="rounded-2xl border border-slate-200 bg-slate-100/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Total Generated</p>
+              <p className="mt-2 text-base font-medium text-slate-900 dark:text-white">{totalGeneratedKwh.toFixed(3)} kWh</p>
+            </div>
+
+            {metrics.list.map((item) => (
+              <div
+                key={item.panel}
+                className="rounded-2xl border border-slate-200 bg-slate-100/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]"
+              >
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">{PANEL_LABEL[item.panel]} Generated</p>
+                <p className="mt-2 text-base font-medium text-slate-900 dark:text-white">{(item.totalEnergyWh / 1000).toFixed(3)} kWh</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <section className="space-y-4">
         <div className="grid gap-4 lg:grid-cols-3">

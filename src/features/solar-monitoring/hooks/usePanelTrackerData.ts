@@ -301,7 +301,7 @@ function buildData(
     sample: series[series.length - 1] ?? null,
     series,
     energySeries,
-    historyRows,
+    historyRows: [...historyRows].reverse(),
     tracker,
     energyToday: Number(cumulativeEnergyKwh.toFixed(3)),
     peakPower: Number(peakPower.toFixed(2)),
