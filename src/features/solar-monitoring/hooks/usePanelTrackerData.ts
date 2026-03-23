@@ -39,8 +39,8 @@ let weatherCache: { expiresAt: number; data: ForecastSeries } | null = null
 const WEATHER_CACHE_MS = 30 * 60 * 1000
 const PANEL_HISTORY_CACHE_MS = 30 * 1000
 const PANEL_REFRESH_MS = 30 * 1000
-const FORECAST_LATITUDE = 14.5995
-const FORECAST_LONGITUDE = 120.9842
+const FORECAST_LATITUDE = 13.7787
+const FORECAST_LONGITUDE = 121.024
 
 type PanelTrackerData = {
   sample: TimeSeriesPoint | null
