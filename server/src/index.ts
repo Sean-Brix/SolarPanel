@@ -9,7 +9,7 @@ import annRouter from './routes/ann.js'
 import authRouter from './routes/auth.js'
 import devRouter from './routes/dev.js'
 import { prisma } from './lib/prisma.js'
-import { connectMQTT, disconnectMQTT } from './lib/mqtt.js'
+import { connectMQTT, disconnectMQTT, subscribeToReadings } from './lib/mqtt.js'
 import { scheduleHourlyForecast } from './lib/forecastWorker.js'
 
 // Support both run modes:
@@ -93,6 +93,7 @@ let forecastWorkerHandle: ReturnType<typeof setInterval> | null = null
 async function startMQTTandForecast() {
   try {
     await connectMQTT()
+    await subscribeToReadings()
     forecastWorkerHandle = scheduleHourlyForecast()
     console.log('MQTT and forecast worker initialized successfully')
   } catch (error) {

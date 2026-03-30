@@ -9,6 +9,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { cn } from '@/shared/lib/cn'
 import { formatNumber } from '@/shared/lib/formatters'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/ui/card'
 
@@ -27,6 +28,7 @@ type ChartCardProps<T extends object> = {
   formatValue?: (value: number) => string
   footer?: string
   height?: number
+  mobileHeight?: number
   headerAction?: React.ReactNode
   showVerticalGrid?: boolean
 }
@@ -53,11 +55,11 @@ function ChartTooltip({
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white/95 px-4 py-3 shadow-2xl backdrop-blur-xl dark:bg-slate-950/90">
+    <div className="max-w-[84vw] rounded-2xl border border-slate-200 bg-white/95 px-3 py-3 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/90 sm:max-w-none sm:px-4">
       <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{label}</p>
-      <div className="mt-3 space-y-2">
+      <div className="mt-2 space-y-2 sm:mt-3">
         {payload.map((item) => (
-          <div key={item.name} className="flex items-center justify-between gap-5 text-sm">
+          <div key={item.name} className="flex items-center justify-between gap-3 text-xs sm:gap-5 sm:text-sm">
             <span className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
               <span
                 className="h-2.5 w-2.5 rounded-full"
@@ -83,9 +85,15 @@ export function ChartCard<T extends object>({
   formatValue = (value) => formatNumber(value, 1),
   footer,
   height = 280,
+  mobileHeight = 220,
   headerAction,
   showVerticalGrid = false,
 }: ChartCardProps<T>) {
+  const heightStyles = {
+    '--chart-height': `${height}px`,
+    '--chart-height-mobile': `${mobileHeight}px`,
+  } as React.CSSProperties
+
   return (
     <Card>
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -96,7 +104,10 @@ export function ChartCard<T extends object>({
         {headerAction ? <div className="sm:shrink-0">{headerAction}</div> : null}
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="min-w-0" style={{ height }}>
+        <div
+          className={cn('min-w-0 pl-1 sm:pl-0 h-[var(--chart-height-mobile)] sm:h-[var(--chart-height)]')}
+          style={heightStyles}
+        >
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={data} margin={{ top: 10, right: 10, left: -18, bottom: 0 }}>
               <CartesianGrid stroke="rgba(148, 163, 184, 0.08)" vertical={showVerticalGrid} />

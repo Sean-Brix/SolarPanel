@@ -67,14 +67,14 @@ export function WeatherCard({ environment, weather }: WeatherCardProps) {
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:grid-cols-4">
           {weather.forecast.map((item) => (
             <div
               key={item.day}
               className="min-w-0 rounded-[22px] border border-slate-200 bg-slate-50/90 p-4 dark:border-white/10 dark:bg-white/[0.03]"
             >
               <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{item.day}</p>
-              <p className="text-wrap-anywhere mt-3 text-base font-medium text-slate-900 dark:text-white">
+              <p className="text-wrap-anywhere mt-2 text-base font-medium text-slate-900 dark:text-white">
                 {item.condition}
               </p>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">

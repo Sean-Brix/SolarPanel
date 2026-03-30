@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ComparisonMetricRow, PanelKey } from '@/shared/types/solar'
 import { ScrollArea } from '@/shared/ui/scroll-area'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/ui/card'
@@ -44,6 +45,12 @@ function ValueCard({
 }
 
 export function ComparisonTable({ rows }: ComparisonTableProps) {
+  const [expandedMetric, setExpandedMetric] = useState<string | null>(null)
+
+  const toggleMetric = (metric: string) => {
+    setExpandedMetric((current) => (current === metric ? null : metric))
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -54,44 +61,58 @@ export function ComparisonTable({ rows }: ComparisonTableProps) {
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <div className="space-y-3 xl:hidden">
+        <div className="space-y-2 lg:hidden">
           {rows.map((row) => (
             <div
               key={row.metric}
-              className="rounded-2xl border border-slate-200 bg-slate-100/80 p-4 dark:border-white/10 dark:bg-white/[0.03]"
+              className="rounded-2xl border border-slate-200 bg-slate-100/80 dark:border-white/10 dark:bg-white/[0.03]"
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <p className="text-wrap-anywhere text-sm font-semibold text-slate-900 dark:text-white">
-                  {row.metric}
-                </p>
-                {row.emphasis ? (
-                  <span
-                    className={`rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] uppercase tracking-[0.14em] text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 ${emphasisTone[row.emphasis]}`}
-                  >
-                    Best: {panelLabels[row.emphasis]}
+              <button
+                type="button"
+                className="w-full px-4 py-3 text-left"
+                onClick={() => toggleMetric(row.metric)}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-wrap-anywhere text-sm font-semibold text-slate-900 dark:text-white">
+                    {row.metric}
+                  </p>
+                  <span className="text-xs uppercase tracking-[0.12em] text-cyan-700 dark:text-cyan-300">
+                    {expandedMetric === row.metric ? 'Hide' : 'Details'}
                   </span>
-                ) : null}
-              </div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                <ValueCard
-                  label="Fixed"
-                  value={row.fixed}
-                  panel="fixed"
-                  emphasis={row.emphasis}
-                />
-                <ValueCard
-                  label="Conventional"
-                  value={row.conventional}
-                  panel="conventional"
-                  emphasis={row.emphasis}
-                />
-                <ValueCard label="ANN" value={row.ann} panel="ann" emphasis={row.emphasis} />
-              </div>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {row.emphasis ? (
+                    <span
+                      className={`rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] uppercase tracking-[0.14em] text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 ${emphasisTone[row.emphasis]}`}
+                    >
+                      Best: {panelLabels[row.emphasis]}
+                    </span>
+                  ) : null}
+                </div>
+              </button>
+
+              {expandedMetric === row.metric ? (
+                <div className="grid gap-2 border-t border-slate-200/90 px-4 py-3 dark:border-white/8">
+                  <ValueCard
+                    label="Fixed"
+                    value={row.fixed}
+                    panel="fixed"
+                    emphasis={row.emphasis}
+                  />
+                  <ValueCard
+                    label="Conventional"
+                    value={row.conventional}
+                    panel="conventional"
+                    emphasis={row.emphasis}
+                  />
+                  <ValueCard label="ANN" value={row.ann} panel="ann" emphasis={row.emphasis} />
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
 
-        <div className="hidden xl:block">
+        <div className="hidden lg:block">
           <ScrollArea className="w-full">
             <div className="min-w-[720px]">
               <table className="w-full border-separate border-spacing-y-2 text-left text-sm">

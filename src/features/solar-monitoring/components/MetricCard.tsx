@@ -45,15 +45,15 @@ export function MetricCard({
       <CardContent className="pt-4 sm:pt-6">
         <div className={cn('absolute inset-x-0 top-0 h-24 bg-gradient-to-b', toneClasses[tone])} />
         <div className="relative min-w-0">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-100/85 p-3 dark:bg-white/5">
+          <div className="flex items-start justify-between gap-2 sm:gap-3">
+            <div className="shrink-0 rounded-2xl border border-slate-200 bg-slate-100/85 p-3 dark:border-white/10 dark:bg-white/5">
               <Icon className="h-5 w-5 text-slate-900 dark:text-white" />
             </div>
-            <p className="max-w-[10rem] text-right text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500 sm:text-xs">
+            <p className="text-wrap-anywhere w-full text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 sm:ml-2 sm:w-auto sm:max-w-[10rem] sm:text-right sm:tracking-[0.16em] dark:text-slate-500">
               {label}
             </p>
           </div>
-          <p className="text-wrap-anywhere mt-5 text-2xl font-semibold leading-tight text-slate-900 dark:text-white sm:text-3xl">
+          <p className="text-wrap-anywhere mt-4 text-2xl font-semibold leading-tight text-slate-900 dark:text-white sm:mt-5 sm:text-3xl">
             {formattedValue}
           </p>
           <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">{note}</p>

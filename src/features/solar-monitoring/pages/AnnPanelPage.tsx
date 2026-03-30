@@ -51,7 +51,7 @@ export function AnnPanelPage() {
         lastUpdated={telemetry.lastUpdated}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+      <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-6">
         <MetricCard
           icon={GaugeCircle}
           label="Voltage"
@@ -100,14 +100,14 @@ export function AnnPanelPage() {
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+      <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
         <WeatherCard environment={environments.ann} weather={weather} />
         {telemetry.tracker ? <TrackerPositionCard tracker={telemetry.tracker} /> : null}
       </div>
 
       <NotificationPanel items={notifications.ann} />
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard
           title="Electrical Performance"
           subtitle="Electrical behavior across the selected window."
@@ -129,7 +129,7 @@ export function AnnPanelPage() {
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
         <ChartCard
           title="Predicted vs Actual Power"
           subtitle="Prediction compared to measured output."

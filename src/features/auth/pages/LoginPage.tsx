@@ -79,7 +79,7 @@ function LoginForm({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
       className={cn(
-        'rounded-[32px] border p-6 shadow-xl backdrop-blur-xl',
+        'rounded-[32px] border p-5 shadow-xl backdrop-blur-xl sm:p-6',
         isDark
           ? 'border-white/10 bg-slate-950/70 text-white'
           : 'border-slate-200 bg-white/90 text-slate-950',
@@ -88,7 +88,7 @@ function LoginForm({
     >
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold">Sign in</h1>
+          <h1 className="text-2xl font-semibold sm:text-3xl">Sign in</h1>
           <p className={cn('mt-2 text-sm', isDark ? 'text-slate-300' : 'text-slate-600')}>
             Access your dashboard.
           </p>

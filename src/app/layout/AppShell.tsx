@@ -24,7 +24,7 @@ const navItems = [
   { label: 'Fixed Panel', shortLabel: 'Fixed', path: '/fixed-panel', icon: SunMedium },
   {
     label: 'Conventional Panel',
-    shortLabel: 'Conve',
+    shortLabel: 'Conv',
     path: '/conventional-panel',
     icon: Activity,
   },
@@ -312,7 +312,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={path}
                 to={path}
                 className={cn(
-                  'flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2.5 text-[11px] font-medium transition',
+                  'flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1.5 py-2.5 text-[10px] font-medium transition sm:px-2 sm:text-[11px]',
                   isActive
                     ? 'bg-cyan-500/15 text-slate-900 dark:text-white'
                     : 'text-slate-600 dark:text-slate-400',
@@ -328,7 +328,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             type="button"
             onClick={() => setMobileMoreOpen((current) => !current)}
             className={cn(
-              'flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2.5 text-[11px] font-medium transition',
+              'flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1.5 py-2.5 text-[10px] font-medium transition sm:px-2 sm:text-[11px]',
               mobileMoreOpen || isSecondaryRoute
                 ? 'bg-cyan-500/15 text-slate-900 dark:text-white'
                 : 'text-slate-600 dark:text-slate-400',

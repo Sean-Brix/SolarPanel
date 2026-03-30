@@ -236,6 +236,7 @@ export function OverviewPage() {
   const [range, setRange] = useState<OverviewRange>('all')
   const [trendMetric, setTrendMetric] = useState<TrendMetric>('energy')
   const [activeLogPanel, setActiveLogPanel] = useState<PanelKey>('fixed')
+  const [expandedComparisonPanel, setExpandedComparisonPanel] = useState<PanelKey | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [readingsByPanel, setReadingsByPanel] = useState<Record<PanelKey, NormalizedReading[]>>({
@@ -661,7 +662,7 @@ export function OverviewPage() {
                 onClick={() => {
                   void handleExportPdf()
                 }}
-                className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-100 sm:w-auto sm:text-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
                 <Download className="h-4 w-4" />
                 Export PDF
@@ -671,7 +672,7 @@ export function OverviewPage() {
                 onClick={() => {
                   void handleExportExcel()
                 }}
-                className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-100 sm:w-auto sm:text-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
                 <Download className="h-4 w-4" />
                 Export Excel
@@ -730,8 +731,59 @@ export function OverviewPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <table className="min-w-[900px] w-full border-separate border-spacing-y-2 text-left text-sm">
+            <div className="space-y-2 md:hidden">
+              {metrics.list.map((item) => {
+                const isExpanded = expandedComparisonPanel === item.panel
+
+                return (
+                  <div
+                    key={item.panel}
+                    className="rounded-2xl border border-slate-200 bg-slate-100/80 dark:border-white/10 dark:bg-white/[0.03]"
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedComparisonPanel((current) =>
+                          current === item.panel ? null : item.panel,
+                        )
+                      }
+                      className="w-full px-4 py-3 text-left"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {PANEL_LABEL[item.panel]}
+                        </p>
+                        <span className="text-xs uppercase tracking-[0.12em] text-cyan-700 dark:text-cyan-300">
+                          {isExpanded ? 'Hide' : 'Details'}
+                        </span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-700 dark:text-slate-300">
+                        <p>Avg Power: {item.averagePower.toFixed(2)} W</p>
+                        <p>Total: {item.totalEnergyWh.toFixed(2)} Wh</p>
+                      </div>
+                    </button>
+
+                    {isExpanded ? (
+                      <div className="grid gap-1 border-t border-slate-200/90 px-4 py-3 text-xs text-slate-700 dark:border-white/8 dark:text-slate-300">
+                        <p>Max Power: {item.maximumPower.toFixed(2)} W</p>
+                        <p>Avg Energy: {item.averageEnergyWh.toFixed(4)} Wh</p>
+                        <p>Max Energy: {item.maximumEnergyWh.toFixed(4)} Wh</p>
+                        <p>Efficiency: {item.efficiencyPct.toFixed(2)}%</p>
+                        <p>Avg Irradiance: {item.averageIrradiance.toFixed(2)} W/m2</p>
+                        <p>Avg Temp: {item.averageTemperature.toFixed(2)} C</p>
+                        <p>
+                          Tracker Movement:{' '}
+                          {item.panel === 'fixed' ? 'N/A' : item.trackerMovementDeg.toFixed(2)} deg
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[900px] border-separate border-spacing-y-2 text-left text-sm">
                 <thead>
                   <tr className="text-xs uppercase tracking-[0.18em] text-slate-500">
                     <th className="pb-2">Panel</th>
@@ -777,7 +829,7 @@ export function OverviewPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="h-full">
-          <CardHeader className="min-h-[130px]">
+          <CardHeader className="min-h-[112px] sm:min-h-[130px]">
             <CardTitle>Which Panel Produces Most Energy?</CardTitle>
             <CardDescription>Total energy winner for the selected range.</CardDescription>
           </CardHeader>
@@ -792,7 +844,7 @@ export function OverviewPage() {
         </Card>
 
         <Card className="h-full">
-          <CardHeader className="min-h-[130px]">
+          <CardHeader className="min-h-[112px] sm:min-h-[130px]">
             <CardTitle>Which Panel Is Most Efficient?</CardTitle>
             <CardDescription>Efficiency computed from energy and irradiance input.</CardDescription>
           </CardHeader>
@@ -807,7 +859,7 @@ export function OverviewPage() {
         </Card>
 
         <Card className="h-full">
-          <CardHeader className="min-h-[130px]">
+          <CardHeader className="min-h-[112px] sm:min-h-[130px]">
             <CardTitle>Tracking Improvement vs Fixed</CardTitle>
             <CardDescription>Gain (%) = ((Energy_tracker - Energy_fixed) / Energy_fixed) * 100</CardDescription>
           </CardHeader>
@@ -829,7 +881,7 @@ export function OverviewPage() {
             <CardDescription>Select one panel and view its historical readings.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="max-w-[280px]">
+            <div className="w-full max-w-[280px]">
               <label className="mb-2 block text-xs uppercase tracking-[0.16em] text-slate-500">
                 Panel
               </label>

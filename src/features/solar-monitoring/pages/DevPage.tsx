@@ -1,58 +1,11 @@
 import { useMemo, useState } from 'react'
 import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
-import { cn } from '@/shared/lib/cn'
-import { clearApiCache } from '@/shared/lib/apiCache'
 
 type PanelKey = 'fixed' | 'conventional' | 'ann'
 type DemoPreset = 'quick' | 'demo' | 'extended'
 
-type PanelPayloads = Record<PanelKey, string>
 type ApiResults = Record<string, string>
 type ApiLoading = Record<string, boolean>
-
-const defaultPayloads: PanelPayloads = {
-  fixed: JSON.stringify(
-    {
-      voltage: 12.4,
-      current: 2.1,
-      power: 26.04,
-    },
-    null,
-    2,
-  ),
-  conventional: JSON.stringify(
-    {
-      voltage: 13.1,
-      current: 2.5,
-      power: 32.75,
-      axisX: 45.2,
-      axisY: -12.8,
-      axisZ: 0.1,
-      ldrTop: 1,
-      ldrBottom: 0,
-      ldrLeft: 0,
-      ldrRight: 1,
-    },
-    null,
-    2,
-  ),
-  ann: JSON.stringify(
-    {
-      voltage: 13.3,
-      current: 2.6,
-      power: 34.58,
-      axisX: 42,
-      axisY: -11.5,
-      axisZ: 0.3,
-      ldrTop: 1,
-      ldrBottom: 0,
-      ldrLeft: 1,
-      ldrRight: 0,
-    },
-    null,
-    2,
-  ),
-}
 
 async function parseResponseBody(response: Response): Promise<unknown> {
   const text = await response.text()
@@ -69,7 +22,6 @@ async function parseResponseBody(response: Response): Promise<unknown> {
 }
 
 export function DevPage() {
-  const [payloads, setPayloads] = useState<PanelPayloads>(defaultPayloads)
   const [demoPreset, setDemoPreset] = useState<DemoPreset>('demo')
   const [results, setResults] = useState<ApiResults>({})
   const [loading, setLoading] = useState<ApiLoading>({})
@@ -92,10 +44,6 @@ export function DevPage() {
 
       const response = await fetch(endpoint, { ...init, headers })
       const body = await parseResponseBody(response)
-
-      if (response.ok && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(init?.method ?? 'GET')) {
-        clearApiCache('/api/')
-      }
 
       setResults((prev) => ({
         ...prev,
@@ -129,42 +77,6 @@ export function DevPage() {
     }
   }
 
-  async function postPanel(panel: PanelKey) {
-    const raw = payloads[panel]
-
-    let parsed: unknown
-
-    try {
-      parsed = JSON.parse(raw)
-    } catch {
-      setResults((prev) => ({
-        ...prev,
-        [`${panel}-post`]: JSON.stringify(
-          {
-            status: 'INVALID_JSON',
-            ok: false,
-            endpoint: `/api/${panel}`,
-            body: 'Payload is not valid JSON',
-          },
-          null,
-          2,
-        ),
-      }))
-      return
-    }
-
-    await callEndpoint(`${panel}-post`, `/api/${panel}`, {
-      method: 'POST',
-      body: JSON.stringify(parsed),
-    })
-  }
-
-  function sectionTitle(panel: PanelKey) {
-    if (panel === 'ann') return 'ANN Panel'
-    if (panel === 'conventional') return 'Conventional Panel'
-    return 'Fixed Panel'
-  }
-
   return (
     <div className="space-y-4 pb-10">
       <PageHeader
@@ -180,70 +92,83 @@ export function DevPage() {
         Dev mode helper: this page calls <span className="font-semibold">/api/*</span> directly. Make sure your Express server is running.
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        {(['fixed', 'conventional', 'ann'] as PanelKey[]).map((panel) => (
-          <section key={panel} className="rounded-3xl border border-slate-200 bg-white/85 p-4 shadow-sm dark:border-white/10 dark:bg-slate-950/70">
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{sectionTitle(panel)}</h2>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              Test POST, latest, and history for <span className="font-medium">/api/{panel}</span>.
-            </p>
+      <section className="rounded-3xl border border-slate-200 bg-white/85 p-4 shadow-sm dark:border-white/10 dark:bg-slate-950/70">
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">MQTT Panel Readings</h2>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+          ESP32 devices publish readings directly to MQTT topics. These topics are automatically processed and stored in the database.
+        </p>
 
-            <label className="mt-3 block text-xs font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-              Payload JSON
-            </label>
-            <textarea
-              value={payloads[panel]}
-              onChange={(event) =>
-                setPayloads((prev) => ({
-                  ...prev,
-                  [panel]: event.target.value,
-                }))
-              }
-              className="mt-2 h-48 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-800 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
-            />
+        <div className="mt-4 space-y-4">
+          {(['fixed', 'conventional', 'ann'] as PanelKey[]).map((panel) => (
+            <div key={panel} className="rounded-2xl border border-slate-300 bg-slate-50 p-3 dark:border-white/10 dark:bg-slate-900">
+              <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 dark:text-slate-300">
+                <span className="inline-block rounded-lg bg-violet-600 px-2 py-1 text-white">PUB</span>
+                helios/readings/{panel}
+              </h3>
 
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => void postPanel(panel)}
-                disabled={loading[`${panel}-post`]}
-                className={cn(
-                  'rounded-xl px-3 py-2 text-xs font-semibold',
-                  'bg-cyan-600 text-white hover:bg-cyan-500 disabled:opacity-60',
-                )}
-              >
-                {loading[`${panel}-post`] ? 'Posting...' : 'POST'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void callEndpoint(`${panel}-latest`, `/api/${panel}/latest`)}
-                disabled={loading[`${panel}-latest`]}
-                className={cn(
-                  'rounded-xl px-3 py-2 text-xs font-semibold',
-                  'bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-700 dark:hover:bg-slate-600',
-                )}
-              >
-                {loading[`${panel}-latest`] ? 'Loading...' : 'Latest'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void callEndpoint(`${panel}-history`, `/api/${panel}/history?limit=5`)}
-                disabled={loading[`${panel}-history`]}
-                className={cn(
-                  'rounded-xl px-3 py-2 text-xs font-semibold',
-                  'bg-slate-100 text-slate-800 hover:bg-slate-200 disabled:opacity-60 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700',
-                )}
-              >
-                {loading[`${panel}-history`] ? 'Loading...' : 'History'}
-              </button>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Example Payload:</p>
+                  <pre className="mt-1 overflow-auto rounded-lg bg-white p-2 text-xs text-slate-600 dark:bg-slate-950 dark:text-slate-400">
+                    {panel === 'fixed'
+                      ? JSON.stringify(
+                          {
+                            voltage: 12.4,
+                            current: 2.1,
+                            power: 26.04,
+                          },
+                          null,
+                          2
+                        )
+                      : JSON.stringify(
+                          {
+                            voltage: 13.3,
+                            current: 2.6,
+                            power: 34.58,
+                            axisX: 42.0,
+                            axisY: -11.5,
+                            axisZ: 0.3,
+                            ldrTop: 1,
+                            ldrBottom: 0,
+                            ldrLeft: 1,
+                            ldrRight: 0,
+                          },
+                          null,
+                          2
+                        )}
+                  </pre>
+                </div>
+
+                <div className="flex gap-2 text-xs text-slate-600 dark:text-slate-400">
+                  <div className="flex-1">
+                    <span className="font-semibold">QoS:</span> 1 (at-least-once)
+                  </div>
+                  <div className="flex-1">
+                    <span className="font-semibold">Retain:</span> true
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Test with mosquitto_pub:</p>
+                  <pre className="mt-1 overflow-auto rounded-lg bg-white p-2 font-mono text-xs text-slate-600 dark:bg-slate-950 dark:text-slate-400">
+                    {`mosquitto_pub -h 8c8f0dbc419240d09dfc75c1cfff9c78.s1.eu.hivemq.cloud -p 8883 --tls-version tlsv1.2 -u helios -P Helios123 -t "helios/readings/${panel}" -m '{${
+                      panel === 'fixed'
+                        ? 'voltage: 12.4, current: 2.1, power: 26.04'
+                        : 'voltage: 13.3, current: 2.6, power: 34.58, axisX: 42.0, axisY: -11.5, axisZ: 0.3, ldrTop: 1, ldrBottom: 0, ldrLeft: 1, ldrRight: 0'
+                    }}'`}
+                  </pre>
+                </div>
+              </div>
             </div>
+          ))}
+        </div>
 
-            <pre className="mt-3 max-h-56 overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200">
-              {results[`${panel}-post`] || results[`${panel}-latest`] || results[`${panel}-history`] || '{\n  "info": "No request yet"\n}'}
-            </pre>
-          </section>
-        ))}
-      </div>
+        <div className="mt-4 rounded-2xl border border-green-300 bg-green-50 p-3 dark:border-green-400/30 dark:bg-green-950/30">
+          <p className="text-xs text-green-800 dark:text-green-200">
+            ✓ Readings published to these topics are automatically validated and stored in the database. Query them with <span className="font-mono">/api/{'{panel}'}/history</span>
+          </p>
+        </div>
+      </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white/85 p-4 shadow-sm dark:border-white/10 dark:bg-slate-950/70">
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Dataset Tools</h2>
@@ -334,6 +259,100 @@ export function DevPage() {
         <pre className="mt-3 max-h-64 overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200">
           {results.overview || results.health || '{\n  "info": "No request yet"\n}'}
         </pre>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white/85 p-4 shadow-sm dark:border-white/10 dark:bg-slate-950/70">
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">MQTT Topics</h2>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+          Real-time message broker configuration and published topics for ESP32 devices.
+        </p>
+
+        <div className="mt-4 space-y-4">
+          <div className="rounded-2xl border border-slate-300 bg-slate-50 p-3 dark:border-white/10 dark:bg-slate-900">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 dark:text-slate-300">
+              Broker Configuration
+            </h3>
+            <div className="mt-2 space-y-1 font-mono text-xs text-slate-700 dark:text-slate-300">
+              <div>
+                <span className="font-semibold text-slate-600 dark:text-slate-400">Broker URL:</span> mqtts://8c8f0dbc419240d09dfc75c1cfff9c78.s1.eu.hivemq.cloud:8883
+              </div>
+              <div>
+                <span className="font-semibold text-slate-600 dark:text-slate-400">Username:</span> helios
+              </div>
+              <div>
+                <span className="font-semibold text-slate-600 dark:text-slate-400">QoS:</span> 1 (at-least-once delivery)
+              </div>
+              <div>
+                <span className="font-semibold text-slate-600 dark:text-slate-400">Protocol:</span> MQTT v4 (3.1.1)
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-300 bg-slate-50 p-3 dark:border-white/10 dark:bg-slate-900">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 dark:text-slate-300">
+              Published Topics
+            </h3>
+            <div className="mt-3 space-y-3">
+              <div className="rounded-xl border border-cyan-300 bg-cyan-50 p-3 dark:border-cyan-400/30 dark:bg-cyan-950/30">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block rounded-lg bg-cyan-600 px-2 py-1 font-mono text-xs font-semibold text-white">
+                    PUB
+                  </span>
+                  <span className="font-mono font-semibold text-cyan-900 dark:text-cyan-100">helios/forecast</span>
+                </div>
+                <p className="mt-2 text-xs text-cyan-800 dark:text-cyan-200">
+                  Hourly weather forecasts published to guide device decision-making (e.g., tracker movement, power conservation).
+                </p>
+                <div className="mt-3 rounded-lg bg-white p-2 dark:bg-slate-900">
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Payload Example:</p>
+                  <pre className="mt-1 overflow-auto text-xs text-slate-600 dark:text-slate-400">
+{`{
+  "timestamp": "2026-03-30T10:00:00+08:00",
+  "hour": 10,
+  "weatherCode": 2,
+  "weatherLabel": "Partly cloudy",
+  "tempC": 33.4,
+  "humidityPct": 62,
+  "windKph": 14.2
+}`}
+                  </pre>
+                </div>
+                <div className="mt-2 grid gap-2 text-xs text-cyan-800 dark:text-cyan-200">
+                  <div>
+                    <span className="font-semibold">Publish Schedule:</span> On startup + every hour (0 min past)
+                  </div>
+                  <div>
+                    <span className="font-semibold">Retain:</span> ✓ Yes (new subscribers receive latest)
+                  </div>
+                  <div>
+                    <span className="font-semibold">Data Source:</span> Open-Meteo API (Manila, Philippines)
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-300 bg-slate-50 p-3 dark:border-white/10 dark:bg-slate-900">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 dark:text-slate-300">
+              Weather Codes Reference
+            </h3>
+            <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+              WMO codes used in <span className="font-mono">weatherCode</span> field:
+            </p>
+            <div className="mt-2 grid gap-1 font-mono text-xs text-slate-700 dark:text-slate-300">
+              <div><span className="inline-block w-6 text-right text-slate-600 dark:text-slate-400">0</span> — Clear</div>
+              <div><span className="inline-block w-6 text-right text-slate-600 dark:text-slate-400">1</span> — Mostly clear</div>
+              <div><span className="inline-block w-6 text-right text-slate-600 dark:text-slate-400">2</span> — Partly cloudy</div>
+              <div><span className="inline-block w-6 text-right text-slate-600 dark:text-slate-400">3</span> — Overcast</div>
+              <div><span className="inline-block w-6 text-right text-slate-600 dark:text-slate-400">45</span> — Foggy</div>
+              <div><span className="inline-block w-6 text-right text-slate-600 dark:text-slate-400">51–55</span> — Drizzle</div>
+              <div><span className="inline-block w-6 text-right text-slate-600 dark:text-slate-400">61–65</span> — Rain</div>
+              <div><span className="inline-block w-6 text-right text-slate-600 dark:text-slate-400">71–77</span> — Snow</div>
+              <div><span className="inline-block w-6 text-right text-slate-600 dark:text-slate-400">80–82</span> — Rain showers</div>
+              <div><span className="inline-block w-6 text-right text-slate-600 dark:text-slate-400">95–99</span> — Thunderstorm</div>
+            </div>
+          </div>
+        </div>
       </section>
     </div>
   )

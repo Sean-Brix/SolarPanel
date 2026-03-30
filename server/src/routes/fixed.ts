@@ -4,77 +4,8 @@ import { prisma } from '../lib/prisma.js'
 
 const router = Router()
 /**
- * POST /api/fixed
- * ESP32 pushes a new Fixed panel reading.
- * Body: { voltage: number, current: number, power: number }
- */
-router.post('/', async (req, res) => {
-  const payload = Array.isArray(req.body) ? req.body : [req.body]
-
-  if (payload.length < 1 || payload.length > 100) {
-    return res.status(400).json({ message: 'request body must contain 1 to 100 readings' })
-  }
-
-  for (const item of payload) {
-    if (
-      !item ||
-      typeof item.voltage !== 'number' ||
-      typeof item.current !== 'number' ||
-      typeof item.power !== 'number'
-    ) {
-      return res
-        .status(400)
-        .json({ message: 'each reading requires numeric voltage, current, and power' })
-    }
-  }
-
-  const result = await enqueueWrite(async () => {
-    const previous = await prisma.fixedReading.findFirst({
-      orderBy: { createdAt: 'desc' },
-      select: { createdAt: true, cumulativeEnergyKwh: true },
-    })
-
-    let runningCumulative = previous?.cumulativeEnergyKwh ?? 0
-    let lastTime = previous?.createdAt ?? new Date(Date.now() - 60_000)
-
-    const rows = payload.map((item, index) => {
-      const currentTime = new Date(lastTime.getTime() + (index > 0 ? 60_000 : 0))
-      const deltaHours = Math.max((currentTime.getTime() - lastTime.getTime()) / 3_600_000, 1 / 60)
-
-      const computedPower = item.voltage * item.current
-      const effectivePower = item.power > 0 ? (item.power + computedPower) / 2 : computedPower
-      const energyKwh = Number(((effectivePower * deltaHours) / 1000).toFixed(6))
-
-      runningCumulative = Number((runningCumulative + energyKwh).toFixed(6))
-      lastTime = currentTime
-
-      return {
-        voltage: item.voltage,
-        current: item.current,
-        power: item.power,
-        energyKwh,
-        cumulativeEnergyKwh: runningCumulative,
-      }
-    })
-
-    if (rows.length === 1) {
-      const created = await prisma.fixedReading.create({ data: rows[0] })
-      return { type: 'single' as const, created }
-    }
-
-    await prisma.fixedReading.createMany({ data: rows })
-    return { type: 'batch' as const, count: rows.length }
-  })
-
-  if (result.type === 'single') {
-    return res.status(201).json(result.created)
-  }
-
-  return res.status(201).json({ message: 'batch accepted', inserted: result.count })
-})
-
-/**
  * GET /api/fixed/latest
+ * Data source: MQTT topic helios/readings/fixed
  * Returns the most recent Fixed panel reading.
  */
 router.get('/latest', async (_req, res) => {
@@ -91,6 +22,7 @@ router.get('/latest', async (_req, res) => {
 
 /**
  * GET /api/fixed/history?limit=50&since=ISO_DATE
+ * Data source: MQTT topic helios/readings/fixed
  * Returns recent Fixed panel readings, newest first.
  * Query params:
  *   limit  – max records to return (default 50, max 100000)

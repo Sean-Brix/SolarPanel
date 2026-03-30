@@ -32,7 +32,7 @@ export function FixedPanelPage() {
         lastUpdated={telemetry.lastUpdated}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+      <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-5">
         <MetricCard icon={GaugeCircle} label="Voltage" value={sample.voltage} unit="V" note="Stable electrical potential" />
         <MetricCard icon={Waves} label="Current" value={sample.current} unit="A" note="Smooth midday current band" tone="lime" />
         <MetricCard icon={BatteryCharging} label="Power" value={sample.power} note="Current live output" tone="amber" format="power" />

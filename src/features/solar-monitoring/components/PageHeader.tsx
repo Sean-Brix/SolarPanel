@@ -23,12 +23,12 @@ export function PageHeader({
   return (
     <Card className="overflow-hidden">
       <CardContent className="pt-4 sm:pt-6">
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+        <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between md:gap-6">
           <div className="min-w-0 max-w-3xl">
             <p className="text-xs uppercase tracking-[0.24em] text-cyan-700 dark:text-cyan-200/80">
               {eyebrow}
             </p>
-            <div className="mt-3 flex flex-wrap items-center gap-3">
+            <div className="mt-3 flex flex-wrap items-center gap-2 sm:gap-3">
               <h2 className="text-wrap-anywhere text-2xl font-semibold text-slate-900 dark:text-white sm:text-4xl">
                 {title}
               </h2>
@@ -41,22 +41,22 @@ export function PageHeader({
             ) : null}
           </div>
 
-          <div className="grid w-full min-w-0 gap-3 sm:grid-cols-2 xl:min-w-[360px] xl:max-w-[460px]">
-            <div className="min-w-0 rounded-[24px] border border-slate-200 dark:border-white/10 bg-slate-100/85 dark:bg-white/5 p-4">
-              <div className="flex min-w-0 items-center gap-3 text-sm text-slate-700 dark:text-slate-300">
+          <div className="grid w-full min-w-0 gap-3 md:grid-cols-2 lg:min-w-[360px] lg:max-w-[460px]">
+            <div className="min-w-0 rounded-[24px] border border-slate-200 bg-slate-100/85 p-4 dark:border-white/10 dark:bg-white/5">
+              <div className="flex min-w-0 items-center gap-2 text-xs text-slate-700 sm:gap-3 sm:text-sm dark:text-slate-300">
                 <Cpu className="h-4 w-4 text-cyan-300" />
                 <span className="text-wrap-anywhere">{connection}</span>
               </div>
-              <p className="mt-3 text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">
+              <p className="mt-3 text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-500">
                 Device link
               </p>
             </div>
-            <div className="min-w-0 rounded-[24px] border border-slate-200 dark:border-white/10 bg-slate-100/85 dark:bg-white/5 p-4">
-              <div className="flex min-w-0 items-center gap-3 text-sm text-slate-700 dark:text-slate-300">
+            <div className="min-w-0 rounded-[24px] border border-slate-200 bg-slate-100/85 p-4 dark:border-white/10 dark:bg-white/5">
+              <div className="flex min-w-0 items-center gap-2 text-xs text-slate-700 sm:gap-3 sm:text-sm dark:text-slate-300">
                 <Clock3 className="h-4 w-4 text-lime-300" />
                 <span className="text-wrap-anywhere">{formatDateTime(lastUpdated)}</span>
               </div>
-              <p className="mt-3 text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">
+              <p className="mt-3 text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-500">
                 Last updated
               </p>
             </div>

@@ -64,7 +64,7 @@ export function TrackerPositionCard({ tracker }: TrackerPositionCardProps) {
         </CardDescription>
       </CardHeader>
 
-      <CardContent className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)] xl:items-start">
+      <CardContent className="grid gap-4 md:gap-6 xl:grid-cols-[280px_minmax(0,1fr)] xl:items-start">
         <div className="mx-auto w-full max-w-[280px]">
           <div className="rounded-[28px] border border-slate-200 bg-slate-50/90 p-5 dark:border-white/10 dark:bg-white/[0.03]">
             <div className="mx-auto flex aspect-square w-full max-w-[240px] items-center justify-center rounded-full border border-slate-200 bg-white/90 dark:border-white/10 dark:bg-slate-950/60">
@@ -165,8 +165,8 @@ export function TrackerPositionCard({ tracker }: TrackerPositionCardProps) {
           </div>
         </div>
 
-        <div className="grid min-w-0 gap-4">
-          <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid min-w-0 gap-4 md:gap-5">
+          <div className="grid gap-4 lg:grid-cols-2">
             <StatPanel
               label="Azimuth"
               value={`${formatNumber(tracker.azimuth, 0)} deg`}
@@ -181,7 +181,7 @@ export function TrackerPositionCard({ tracker }: TrackerPositionCardProps) {
             />
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2">
             <DetailPanel label="Mode" value={tracker.mode} />
             <DetailPanel label="Moves today" value={`${tracker.movementCount}`} />
             <DetailPanel
