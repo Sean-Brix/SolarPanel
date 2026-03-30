@@ -9,6 +9,8 @@ import annRouter from './routes/ann.js'
 import authRouter from './routes/auth.js'
 import devRouter from './routes/dev.js'
 import { prisma } from './lib/prisma.js'
+import { connectMQTT, disconnectMQTT } from './lib/mqtt.js'
+import { scheduleHourlyForecast } from './lib/forecastWorker.js'
 
 // Support both run modes:
 // 1) `npm run dev` inside `server/` (loads `.env`)
@@ -85,11 +87,36 @@ app.use((error: unknown, _req: express.Request, res: express.Response, next: exp
   return res.status(500).json({ message: 'Internal server error' })
 })
 
-app.listen(port, () => {
+// ─── MQTT Setup ────────────────────────────────────────────────────────────
+let forecastWorkerHandle: ReturnType<typeof setInterval> | null = null
+
+async function startMQTTandForecast() {
+  try {
+    await connectMQTT()
+    forecastWorkerHandle = scheduleHourlyForecast()
+    console.log('MQTT and forecast worker initialized successfully')
+  } catch (error) {
+    console.warn(
+      'MQTT initialization failed (continuing without MQTT):',
+      error instanceof Error ? error.message : String(error)
+    )
+    // Non-fatal: system continues with REST API only
+  }
+}
+
+app.listen(port, async () => {
   console.log(`REST API running on http://localhost:${port}`)
+  await startMQTTandForecast()
 })
 
 process.on('SIGINT', async () => {
+  console.log('Shutting down...')
+
+  if (forecastWorkerHandle) {
+    clearInterval(forecastWorkerHandle)
+  }
+
+  await disconnectMQTT()
   await prisma.$disconnect()
   process.exit(0)
 })

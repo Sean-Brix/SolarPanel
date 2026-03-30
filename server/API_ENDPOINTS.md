@@ -256,3 +256,74 @@ Same physical sensors as the Conventional panel.
 | `400` | `{ "message": "..." }` | Missing or invalid fields |
 | `404` | `{ "message": "No readings found" }` | Table is empty |
 | `500` | `{ "message": "Internal server error" }` | Unexpected server error |
+
+---
+
+## MQTT Topics
+
+The server publishes hourly weather forecasts to devices via MQTT (HiveMQ Cloud broker).
+
+> **Broker Configuration:** See `.env` file for `MQTT_BROKER_URL`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_QOS`
+
+### Topic: `helios/forecast`
+
+**Purpose:** Server publishes the current and upcoming weather to guide device decision-making (e.g., whether to move a tracker).
+
+**Publish Schedule:**
+- On server startup (warm-up publish)
+- Every hour, on the hour (0 minutes past)
+
+**QoS & Retain:** QoS 1 (at-least-once delivery), retain=true (new subscribers receive the latest forecast immediately)
+
+**Payload (JSON):**
+```json
+{
+  "timestamp": "2026-03-30T10:00:00+08:00",
+  "hour": 10,
+  "weatherCode": 2,
+  "weatherLabel": "Partly cloudy",
+  "tempC": 33.4,
+  "humidityPct": 62,
+  "windKph": 14.2
+}
+```
+
+**Field Descriptions:**
+- `timestamp` — ISO 8601 datetime (Asia/Manila timezone) of the weather reading
+- `hour` — Hour of the day (0–23, 24-hour format)
+- `weatherCode` — WMO code (0–99, mapped to Philippine conditions)
+- `weatherLabel` — Human-readable label for `weatherCode`:
+  - 0 = Clear
+  - 1 = Mostly clear
+  - 2 = Partly cloudy
+  - 3 = Overcast
+  - 45 = Foggy
+  - 48 = Rime fog / Depositing rime fog
+  - 51 = Light drizzle
+  - 53 = Moderate drizzle
+  - 55 = Dense drizzle
+  - 61 = Slight rain
+  - 63 = Moderate rain
+  - 65 = Heavy rain
+  - 71 = Slight snow
+  - 73 = Moderate snow
+  - 75 = Heavy snow
+  - 77 = Snow grains
+  - 80 = Slight rain showers
+  - 81 = Moderate rain showers
+  - 82 = Violent rain showers
+  - 85 = Slight snow showers
+  - 86 = Heavy snow showers
+  - 95 = Thunderstorm with slight hail
+  - 96 = Thunderstorm with moderate hail
+  - 99 = Thunderstorm with heavy hail
+- `tempC` — Ambient temperature in °C
+- `humidityPct` — Relative humidity (0–100 %)
+- `windKph` — Wind speed in km/h
+
+**Data Source:** Open-Meteo API (https://api.open-meteo.com/v1/forecast) with coordinates 14.5995°N, 120.9842°E (Manila, Philippines)
+
+**Example Use Case:**
+- Device subscribes to `helios/forecast` and caches the most recent message (retained)
+- Device checks `weatherCode` or `weatherLabel` before deciding to move tracker
+- E.g., skip tracker movement during thunderstorm (code 95+) to conserve power and avoid damage
