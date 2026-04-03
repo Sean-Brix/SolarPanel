@@ -79,6 +79,15 @@ export function FixedPanelPage() {
         rows={telemetry.historyRows}
         title="Fixed Panel Historical Log"
         description="Live measurements from the Fixed panel database logs."
+        page={telemetry.pagination.page}
+        pageSize={telemetry.pagination.pageSize}
+        totalPages={telemetry.pagination.totalPages}
+        totalCount={telemetry.pagination.totalCount}
+        hasPrev={telemetry.pagination.hasPrev}
+        hasNext={telemetry.pagination.hasNext}
+        onPageChange={telemetry.setPage}
+        onPageSizeChange={telemetry.setPageSize}
+        loading={telemetry.loading}
       />
     </div>
   )

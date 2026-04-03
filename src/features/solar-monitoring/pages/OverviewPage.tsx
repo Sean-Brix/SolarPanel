@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Download } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { ChartCard } from '@/features/solar-monitoring/components/ChartCard'
 import { HistoricalLogTable } from '@/features/solar-monitoring/components/HistoricalLogTable'
 import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
 import { fetchJsonCached } from '@/shared/lib/apiCache'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
-import type { HistoryRow, PanelKey } from '@/shared/types/solar'
+import type { AnnRunDetail } from '@/shared/types/ann'
+import type { HistoryRow, PaginatedResponse, PaginationInfo, PanelKey } from '@/shared/types/solar'
 
 type BackendReading = {
+  id?: number
   createdAt?: string
   timestamp?: string
   panel_type?: PanelKey
   voltage: number
   current: number
+  power?: number
   irradiance?: number
   temperature?: number
   humidity?: number
@@ -24,6 +28,7 @@ type BackendReading = {
 }
 
 type NormalizedReading = {
+  id: string
   timestamp: Date
   panelType: PanelKey
   voltage: number
@@ -37,9 +42,10 @@ type NormalizedReading = {
 }
 
 type TrendMetric = 'energy' | 'efficiency' | 'power'
+type ComparisonPanelKey = 'fixed' | 'conventional'
 
 type PanelMetrics = {
-  panel: PanelKey
+  panel: ComparisonPanelKey
   averagePower: number
   maximumPower: number
   totalEnergyWh: number
@@ -61,39 +67,33 @@ const PANEL_AREA_M2 = 1.6
 
 type OverviewRange = 'hour' | 'day' | 'week' | 'month' | 'all'
 
-const RANGE_CONFIG: Record<OverviewRange, { label: string; sinceMs?: number; limit: number }> = {
-  all: { label: 'All time', limit: 100_000 },
-  hour: { label: 'Last hour', sinceMs: 60 * 60 * 1000, limit: 120 },
-  day: { label: 'Last 24 hours', sinceMs: 24 * 60 * 60 * 1000, limit: 2_000 },
-  week: { label: 'Last 7 days', sinceMs: 7 * 24 * 60 * 60 * 1000, limit: 10_000 },
-  month: { label: 'Last 30 days', sinceMs: 30 * 24 * 60 * 60 * 1000, limit: 10_000 },
+const RANGE_CONFIG: Record<OverviewRange, { label: string; sinceMs?: number; pageSize: number }> = {
+  all: { label: 'All time', pageSize: 50 },
+  hour: { label: 'Last hour', sinceMs: 60 * 60 * 1000, pageSize: 25 },
+  day: { label: 'Last 24 hours', sinceMs: 24 * 60 * 60 * 1000, pageSize: 25 },
+  week: { label: 'Last 7 days', sinceMs: 7 * 24 * 60 * 60 * 1000, pageSize: 50 },
+  month: { label: 'Last 30 days', sinceMs: 30 * 24 * 60 * 60 * 1000, pageSize: 50 },
 }
 
 const OVERVIEW_HISTORY_CACHE_MS = 30 * 1000
-const OVERVIEW_REFRESH_MS = 30 * 1000
+
+function emptyPagination(pageSize: number): PaginationInfo {
+  return {
+    page: 1,
+    pageSize,
+    totalCount: 0,
+    totalPages: 1,
+    hasPrev: false,
+    hasNext: false,
+  }
+}
 
 function average(values: number[]) {
   if (!values.length) return 0
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
-function estimateIrradiance(power: number, panelType: PanelKey) {
-  const assumedEfficiency = panelType === 'ann' ? 0.22 : panelType === 'conventional' ? 0.2 : 0.18
-  const estimated = power / (PANEL_AREA_M2 * assumedEfficiency)
-
-  return Math.max(0, Math.min(1100, estimated))
-}
-
-function estimateTemperature(timestamp: Date, irradiance: number) {
-  const hour = timestamp.getHours() + timestamp.getMinutes() / 60
-  const diurnalOffset = Math.sin(((hour - 6) / 12) * Math.PI)
-  const ambientBase = 25 + Math.max(0, diurnalOffset) * 7
-  const irradianceBoost = irradiance / 140
-
-  return Math.min(52, Math.max(20, ambientBase + irradianceBoost))
-}
-
-function computeMetrics(panel: PanelKey, rows: NormalizedReading[]): PanelMetrics {
+function computeMetrics(panel: ComparisonPanelKey, rows: NormalizedReading[]): PanelMetrics {
   if (!rows.length) {
     return {
       panel,
@@ -170,6 +170,7 @@ function toHistoryRows(rows: NormalizedReading[]): HistoryRow[] {
         : 1 / 60
 
       return {
+        id: row.id,
         timestamp: row.timestamp.toLocaleString('en-US', {
           month: 'short',
           day: 'numeric',
@@ -235,84 +236,158 @@ function buildPanelTrend(rows: NormalizedReading[]) {
 export function OverviewPage() {
   const [range, setRange] = useState<OverviewRange>('all')
   const [trendMetric, setTrendMetric] = useState<TrendMetric>('energy')
-  const [activeLogPanel, setActiveLogPanel] = useState<PanelKey>('fixed')
-  const [expandedComparisonPanel, setExpandedComparisonPanel] = useState<PanelKey | null>(null)
+  const [activeLogPanel, setActiveLogPanel] = useState<ComparisonPanelKey>('fixed')
+  const [expandedComparisonPanel, setExpandedComparisonPanel] = useState<ComparisonPanelKey | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [readingsByPanel, setReadingsByPanel] = useState<Record<PanelKey, NormalizedReading[]>>({
+  const [readingsByPanel, setReadingsByPanel] = useState<Record<ComparisonPanelKey, NormalizedReading[]>>({
     fixed: [],
     conventional: [],
-    ann: [],
   })
+  const [fixedHistoryPage, setFixedHistoryPage] = useState(1)
+  const [fixedHistoryPageSize, setFixedHistoryPageSize] = useState(RANGE_CONFIG.all.pageSize)
+  const [conventionalHistoryPage, setConventionalHistoryPage] = useState(1)
+  const [conventionalHistoryPageSize, setConventionalHistoryPageSize] = useState(RANGE_CONFIG.all.pageSize)
+  const [paginationByPanel, setPaginationByPanel] = useState<Record<ComparisonPanelKey, PaginationInfo>>({
+    fixed: emptyPagination(RANGE_CONFIG.all.pageSize),
+    conventional: emptyPagination(RANGE_CONFIG.all.pageSize),
+  })
+  const [annLatest, setAnnLatest] = useState<AnnRunDetail | null>(null)
+
+  useEffect(() => {
+    const defaultPageSize = RANGE_CONFIG[range].pageSize
+    setFixedHistoryPage(1)
+    setConventionalHistoryPage(1)
+    setFixedHistoryPageSize(defaultPageSize)
+    setConventionalHistoryPageSize(defaultPageSize)
+  }, [range])
 
   useEffect(() => {
     let active = true
 
-    const fetchPanelReadings = async (panel: PanelKey, limit: number, since?: Date) => {
-      const query = new URLSearchParams({ limit: String(limit) })
+    const fetchPanelReadings = async (
+      panel: ComparisonPanelKey,
+      page: number,
+      pageSize: number,
+      since?: Date,
+      force = false,
+    ) => {
+      const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
       if (since) {
         query.set('since', since.toISOString())
       }
-      const response = await fetchJsonCached<BackendReading[]>(
+
+      const response = await fetchJsonCached<PaginatedResponse<BackendReading>>(
         `/api/${panel}/history?${query.toString()}`,
-        { ttlMs: OVERVIEW_HISTORY_CACHE_MS },
+        { ttlMs: OVERVIEW_HISTORY_CACHE_MS, force },
       )
 
       if (!response.ok) {
-        if (response.status === 404) {
-          return [] as NormalizedReading[]
-        }
-
         throw new Error(`Failed to load ${panel} readings (${response.status})`)
       }
 
       const payload = response.body
+      const items = payload.items
 
-      return payload
+      const readings = items
         .map((item) => {
           const timestampValue = item.timestamp ?? item.createdAt
           const timestamp = timestampValue ? new Date(timestampValue) : new Date()
           const voltage = Number(item.voltage ?? 0)
           const current = Number(item.current ?? 0)
-          const power = voltage * current
-          const rawIrradiance = Number(item.irradiance ?? 0)
-          const irradiance = rawIrradiance > 0 ? rawIrradiance : estimateIrradiance(power, panel)
-          const rawTemperature = Number(item.temperature ?? 0)
+          const power = Number(item.power ?? voltage * current)
+          const irradiance = Number(item.irradiance ?? 0)
+          const temperature = Number(item.temperature ?? 0)
+          const derivedId = item.id ?? `${panel}-${timestamp.getTime()}-${Math.round(power * 1000)}`
 
           return {
+            id: String(derivedId),
             timestamp,
             panelType: panel,
             voltage,
             current,
             power,
             irradiance,
-            temperature: rawTemperature > 0 ? rawTemperature : estimateTemperature(timestamp, irradiance),
+            temperature,
             humidity: Number(item.humidity ?? 0),
             azimuthAngle: item.azimuth_angle ?? item.axisY,
             elevationAngle: item.elevation_angle ?? item.axisX,
           } satisfies NormalizedReading
         })
         .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+
+      return {
+        readings,
+        pagination: payload.pagination,
+      }
     }
 
-    const load = async () => {
+    const fetchLatestAnnRun = async (force = false) => {
+      const response = await fetchJsonCached<AnnRunDetail | { message: string }>(`/api/ann/latest`, {
+        ttlMs: OVERVIEW_HISTORY_CACHE_MS,
+        force,
+      })
+
+      if (response.status === 404) {
+        return null
+      }
+
+      if (!response.ok) {
+        throw new Error(`Failed to load ANN status (${response.status})`)
+      }
+
+      return response.body as AnnRunDetail
+    }
+
+    const load = async (force = false) => {
       setLoading(true)
       setError(null)
 
       try {
         const config = RANGE_CONFIG[range]
         const since = config.sinceMs ? new Date(Date.now() - config.sinceMs) : undefined
-        const [fixed, conventional, ann] = await Promise.all([
-          fetchPanelReadings('fixed', config.limit, since),
-          fetchPanelReadings('conventional', config.limit, since),
-          fetchPanelReadings('ann', config.limit, since),
+        const [fixedResult, conventionalResult, latestAnn] = await Promise.all([
+          fetchPanelReadings('fixed', fixedHistoryPage, fixedHistoryPageSize, since, force),
+          fetchPanelReadings(
+            'conventional',
+            conventionalHistoryPage,
+            conventionalHistoryPageSize,
+            since,
+            force,
+          ),
+          fetchLatestAnnRun(force),
         ])
 
         if (!active) {
           return
         }
 
-        setReadingsByPanel({ fixed, conventional, ann })
+        setReadingsByPanel({
+          fixed: fixedResult.readings,
+          conventional: conventionalResult.readings,
+        })
+        setPaginationByPanel({
+          fixed: fixedResult.pagination,
+          conventional: conventionalResult.pagination,
+        })
+
+        if (fixedResult.pagination.page !== fixedHistoryPage) {
+          setFixedHistoryPage(fixedResult.pagination.page)
+        }
+
+        if (fixedResult.pagination.pageSize !== fixedHistoryPageSize) {
+          setFixedHistoryPageSize(fixedResult.pagination.pageSize)
+        }
+
+        if (conventionalResult.pagination.page !== conventionalHistoryPage) {
+          setConventionalHistoryPage(conventionalResult.pagination.page)
+        }
+
+        if (conventionalResult.pagination.pageSize !== conventionalHistoryPageSize) {
+          setConventionalHistoryPageSize(conventionalResult.pagination.pageSize)
+        }
+
+        setAnnLatest(latestAnn)
       } catch (loadError) {
         if (!active) {
           return
@@ -327,23 +402,33 @@ export function OverviewPage() {
     }
 
     void load()
-    const timer = window.setInterval(() => {
+
+    const events = new EventSource('/api/events/readings')
+    const onReadingEvent = () => {
       if (document.visibilityState === 'visible') {
-        void load()
+        void load(true)
       }
-    }, OVERVIEW_REFRESH_MS)
+    }
+
+    events.addEventListener('reading', onReadingEvent)
 
     return () => {
       active = false
-      window.clearInterval(timer)
+      events.removeEventListener('reading', onReadingEvent)
+      events.close()
     }
-  }, [range])
+  }, [
+    range,
+    fixedHistoryPage,
+    fixedHistoryPageSize,
+    conventionalHistoryPage,
+    conventionalHistoryPageSize,
+  ])
 
   const metrics = useMemo(() => {
     const fixed = computeMetrics('fixed', readingsByPanel.fixed)
     const conventional = computeMetrics('conventional', readingsByPanel.conventional)
-    const ann = computeMetrics('ann', readingsByPanel.ann)
-    const list = [fixed, conventional, ann]
+    const list = [fixed, conventional]
 
     const maxEnergy = Math.max(...list.map((item) => item.totalEnergyWh), 0)
     const withRelativeEfficiency = list.map((item) => ({
@@ -359,7 +444,6 @@ export function OverviewPage() {
     return {
       fixed: withRelativeEfficiency[0],
       conventional: withRelativeEfficiency[1],
-      ann: withRelativeEfficiency[2],
       list: withRelativeEfficiency,
     }
   }, [readingsByPanel])
@@ -385,35 +469,30 @@ export function OverviewPage() {
         100
       : 0
 
-  const annGain =
-    metrics.fixed.totalEnergyWh > 0
-      ? ((metrics.ann.totalEnergyWh - metrics.fixed.totalEnergyWh) / metrics.fixed.totalEnergyWh) *
-        100
-      : 0
-
   const latestTimestamp = useMemo(() => {
-    const all = [...readingsByPanel.fixed, ...readingsByPanel.conventional, ...readingsByPanel.ann]
+    const all = [...readingsByPanel.fixed, ...readingsByPanel.conventional]
 
     if (!all.length) {
-      return new Date()
+      return annLatest ? new Date(annLatest.createdAt) : new Date()
     }
 
-    return all.reduce(
+    const panelLatest = all.reduce(
       (latest, item) => (item.timestamp.getTime() > latest.getTime() ? item.timestamp : latest),
       all[0].timestamp,
     )
-  }, [readingsByPanel])
+
+    const annTimestamp = annLatest ? new Date(annLatest.createdAt) : null
+    return annTimestamp && annTimestamp.getTime() > panelLatest.getTime() ? annTimestamp : panelLatest
+  }, [annLatest, readingsByPanel])
 
   const comparisonChartData = useMemo(() => {
     const fixedTrend = buildPanelTrend(readingsByPanel.fixed)
     const conventionalTrend = buildPanelTrend(readingsByPanel.conventional)
-    const annTrend = buildPanelTrend(readingsByPanel.ann)
 
     const allTimestamps = Array.from(
       new Set<number>([
         ...fixedTrend.keys(),
         ...conventionalTrend.keys(),
-        ...annTrend.keys(),
       ]),
     ).sort((a, b) => a - b)
 
@@ -421,19 +500,15 @@ export function OverviewPage() {
       const at = new Date(timestamp)
       const fixedPoint = fixedTrend.get(timestamp)
       const conventionalPoint = conventionalTrend.get(timestamp)
-      const annPoint = annTrend.get(timestamp)
 
       return {
         label: formatTrendLabel(at, range),
         fixedEnergyWh: fixedPoint?.energyWh,
         conventionalEnergyWh: conventionalPoint?.energyWh,
-        annEnergyWh: annPoint?.energyWh,
         fixedEfficiencyPct: fixedPoint?.efficiencyPct,
         conventionalEfficiencyPct: conventionalPoint?.efficiencyPct,
-        annEfficiencyPct: annPoint?.efficiencyPct,
         fixedAveragePower: fixedPoint?.averagePower,
         conventionalAveragePower: conventionalPoint?.averagePower,
-        annAveragePower: annPoint?.averagePower,
       }
     })
   }, [readingsByPanel, range])
@@ -447,7 +522,6 @@ export function OverviewPage() {
         series: [
           { key: 'fixedEfficiencyPct', label: 'Fixed Efficiency (%)', color: '#38bdf8', type: 'line' as const },
           { key: 'conventionalEfficiencyPct', label: 'Conventional Efficiency (%)', color: '#f59e0b', type: 'line' as const },
-          { key: 'annEfficiencyPct', label: 'ANN Efficiency (%)', color: '#84cc16', type: 'line' as const },
         ],
       }
     }
@@ -460,7 +534,6 @@ export function OverviewPage() {
         series: [
           { key: 'fixedAveragePower', label: 'Fixed Avg Power (W)', color: '#38bdf8', type: 'line' as const },
           { key: 'conventionalAveragePower', label: 'Conventional Avg Power (W)', color: '#f59e0b', type: 'line' as const },
-          { key: 'annAveragePower', label: 'ANN Avg Power (W)', color: '#84cc16', type: 'line' as const },
         ],
       }
     }
@@ -472,7 +545,6 @@ export function OverviewPage() {
       series: [
         { key: 'fixedEnergyWh', label: 'Fixed Total Energy (Wh)', color: '#38bdf8', type: 'line' as const },
         { key: 'conventionalEnergyWh', label: 'Conventional Total Energy (Wh)', color: '#f59e0b', type: 'line' as const },
-        { key: 'annEnergyWh', label: 'ANN Total Energy (Wh)', color: '#84cc16', type: 'line' as const },
       ],
     }
   }, [trendMetric, range])
@@ -480,6 +552,31 @@ export function OverviewPage() {
   const historyRows = useMemo(() => {
     return toHistoryRows(readingsByPanel[activeLogPanel])
   }, [activeLogPanel, readingsByPanel])
+  const activePagination = paginationByPanel[activeLogPanel]
+
+  const handleHistoryPageChange = (nextPage: number) => {
+    const normalized = Math.max(1, Math.trunc(nextPage || 1))
+
+    if (activeLogPanel === 'fixed') {
+      setFixedHistoryPage(normalized)
+      return
+    }
+
+    setConventionalHistoryPage(normalized)
+  }
+
+  const handleHistoryPageSizeChange = (nextPageSize: number) => {
+    const normalized = Math.min(Math.max(Math.trunc(nextPageSize || 25), 1), 500)
+
+    if (activeLogPanel === 'fixed') {
+      setFixedHistoryPageSize(normalized)
+      setFixedHistoryPage(1)
+      return
+    }
+
+    setConventionalHistoryPageSize(normalized)
+    setConventionalHistoryPage(1)
+  }
 
   const totalGeneratedKwh = useMemo(() => {
     return metrics.list.reduce((sum, item) => sum + item.totalEnergyWh, 0) / 1000
@@ -489,7 +586,6 @@ export function OverviewPage() {
     const xlsx = await import('xlsx')
     const fixedLogs = toHistoryRows(readingsByPanel.fixed)
     const conventionalLogs = toHistoryRows(readingsByPanel.conventional)
-    const annLogs = toHistoryRows(readingsByPanel.ann)
 
     const summaryRows = [
       { Metric: 'Range', Value: RANGE_CONFIG[range].label },
@@ -518,13 +614,11 @@ export function OverviewPage() {
     const comparisonSheet = xlsx.utils.json_to_sheet(comparisonRows)
     const fixedLogSheet = xlsx.utils.json_to_sheet(fixedLogs)
     const conventionalLogSheet = xlsx.utils.json_to_sheet(conventionalLogs)
-    const annLogSheet = xlsx.utils.json_to_sheet(annLogs)
 
     xlsx.utils.book_append_sheet(workbook, summarySheet, 'Summary')
     xlsx.utils.book_append_sheet(workbook, comparisonSheet, 'Comparison')
     xlsx.utils.book_append_sheet(workbook, fixedLogSheet, 'Fixed Logs')
     xlsx.utils.book_append_sheet(workbook, conventionalLogSheet, 'Conventional Logs')
-    xlsx.utils.book_append_sheet(workbook, annLogSheet, 'ANN Logs')
 
     xlsx.writeFile(workbook, `overview-${range}-report.xlsx`)
   }
@@ -534,7 +628,6 @@ export function OverviewPage() {
     const autoTable = (await import('jspdf-autotable/es')).default
     const fixedLogs = toHistoryRows(readingsByPanel.fixed)
     const conventionalLogs = toHistoryRows(readingsByPanel.conventional)
-    const annLogs = toHistoryRows(readingsByPanel.ann)
 
     const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
     const generatedAt = new Date().toLocaleString('en-US')
@@ -588,7 +681,6 @@ export function OverviewPage() {
     const logSections: Array<{ title: string; rows: HistoryRow[] }> = [
       { title: 'Fixed Historical Logs', rows: fixedLogs },
       { title: 'Conventional Historical Logs', rows: conventionalLogs },
-      { title: 'ANN Historical Logs', rows: annLogs },
     ]
 
     logSections.forEach((section) => {
@@ -632,7 +724,7 @@ export function OverviewPage() {
         eyebrow="Performance comparison"
         title="Panel Performance Overview"
         description={`Compare output and efficiency metrics for ${RANGE_CONFIG[range].label.toLowerCase()}.`}
-        connection={`${readingsByPanel.fixed.length + readingsByPanel.conventional.length + readingsByPanel.ann.length} readings aggregated`}
+        connection={`${readingsByPanel.fixed.length + readingsByPanel.conventional.length} comparison readings aggregated`}
         status={error ? 'warning' : 'optimal'}
         lastUpdated={latestTimestamp}
       />
@@ -827,7 +919,7 @@ export function OverviewPage() {
         </Card>
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-4">
         <Card className="h-full">
           <CardHeader className="min-h-[112px] sm:min-h-[130px]">
             <CardTitle>Which Panel Produces Most Energy?</CardTitle>
@@ -861,15 +953,36 @@ export function OverviewPage() {
         <Card className="h-full">
           <CardHeader className="min-h-[112px] sm:min-h-[130px]">
             <CardTitle>Tracking Improvement vs Fixed</CardTitle>
-            <CardDescription>Gain (%) = ((Energy_tracker - Energy_fixed) / Energy_fixed) * 100</CardDescription>
+            <CardDescription>Gain (%) = ((Energy_conventional - Energy_fixed) / Energy_fixed) * 100</CardDescription>
           </CardHeader>
           <CardContent className="pt-0 space-y-1 text-sm">
             <p className="text-slate-700 dark:text-slate-300">
               Conventional: <span className="font-semibold">{conventionalGain.toFixed(2)}%</span>
             </p>
-            <p className="text-slate-700 dark:text-slate-300">
-              ANN: <span className="font-semibold">{annGain.toFixed(2)}%</span>
+            <p className="text-slate-700 dark:text-slate-300">ANN is tracked separately on its own prediction dashboard.</p>
+          </CardContent>
+        </Card>
+
+        <Card className="h-full">
+          <CardHeader className="min-h-[112px] sm:min-h-[130px]">
+            <CardTitle>ANN Status</CardTitle>
+            <CardDescription>ANN now uses run-based prediction checks instead of power-comparison telemetry.</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-3 text-sm">
+            <p className="text-slate-900 dark:text-white">
+              {annLatest ? `${annLatest.overallResult} | ${annLatest.weatherCheck.matchCount}/${annLatest.weatherCheck.total} weather checks` : 'Waiting for ANN run data'}
             </p>
+            <p className="text-slate-600 dark:text-slate-400">
+              {annLatest
+                ? `Last ANN ingest ${new Date(annLatest.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+                : 'Open the ANN dashboard to monitor prediction-check runs.'}
+            </p>
+            <Link
+              to="/ann-panel"
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              Open ANN Dashboard
+            </Link>
           </CardContent>
         </Card>
       </div>
@@ -887,12 +1000,11 @@ export function OverviewPage() {
               </label>
               <select
                 value={activeLogPanel}
-                onChange={(event) => setActiveLogPanel(event.target.value as PanelKey)}
+                onChange={(event) => setActiveLogPanel(event.target.value as ComparisonPanelKey)}
                 className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
               >
                 <option value="fixed">Fixed</option>
                 <option value="conventional">Conventional</option>
-                <option value="ann">ANN</option>
               </select>
             </div>
           </CardContent>
@@ -902,6 +1014,15 @@ export function OverviewPage() {
           rows={historyRows}
           title={`${PANEL_LABEL[activeLogPanel]} Historical Log`}
           description={loading ? 'Loading logs...' : error ? error : 'Telemetry table for selected panel.'}
+          page={activePagination.page}
+          pageSize={activePagination.pageSize}
+          totalPages={activePagination.totalPages}
+          totalCount={activePagination.totalCount}
+          hasPrev={activePagination.hasPrev}
+          hasNext={activePagination.hasNext}
+          onPageChange={handleHistoryPageChange}
+          onPageSizeChange={handleHistoryPageSizeChange}
+          loading={loading}
         />
       </section>
     </div>

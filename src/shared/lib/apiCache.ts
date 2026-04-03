@@ -55,7 +55,14 @@ export async function fetchJsonCached<T>(
     }
   }
 
-  const request = fetch(url, options?.init)
+  const requestInit: RequestInit = options?.force
+    ? {
+        ...(options?.init ?? {}),
+        cache: 'no-store',
+      }
+    : (options?.init ?? {})
+
+  const request = fetch(url, requestInit)
     .then(async (response) => {
       const value: CachedJsonResponse<T> = {
         ok: response.ok,

@@ -16,6 +16,7 @@ model FixedReading {
   energyKwh           Float    @default(0)
   cumulativeEnergyKwh Float    @default(0)
 
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
   @@map("fixed_readings")
 }
 
@@ -35,6 +36,7 @@ model ConventionalReading {
   energyKwh           Float    @default(0)
   cumulativeEnergyKwh Float    @default(0)
 
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
   @@map("conventional_readings")
 }
 
@@ -55,6 +57,50 @@ model AnnReading {
   cumulativeEnergyKwh Float    @default(0)
 
   @@map("ann_readings")
+}
+
+model AnnPredictionRun {
+  id                   Int      @id @default(autoincrement())
+  deviceId             String
+  predictionId         Int?
+  verifiedId           Int?
+  deviceTimestamp      DateTime
+  source               String
+  mode                 String
+  overallResult        String
+  sensorResult         String
+  weatherCodeResult    String
+  timeResult           String
+  tempResult           String
+  humidityResult       String
+  weatherMatchCount    Int      @default(0)
+  weatherCheckCount    Int      @default(4)
+  fieldCount           Int      @default(0)
+  okCount              Int      @default(0)
+  mismatchCount        Int      @default(0)
+  worstFieldName       String?
+  worstFieldDifference Float?
+  worstFieldTolerance  Float?
+  worstFieldDiffRatio  Float?
+  relayApplied         Boolean  @default(false)
+  relayMessage         String?
+  weather              Json
+  samples              Json
+  predictionCheck      Json
+  relayMemory          Json
+  fieldResults         Json
+  rawPayload           Json
+  createdAt            DateTime @default(now())
+
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+  @@index([overallResult, createdAt(sort: Desc)])
+  @@index([sensorResult, createdAt(sort: Desc)])
+  @@index([relayApplied, createdAt(sort: Desc)])
+  @@index([deviceTimestamp(sort: Desc)])
+  @@index([overallResult, deviceTimestamp(sort: Desc)])
+  @@index([sensorResult, deviceTimestamp(sort: Desc)])
+  @@index([relayApplied, deviceTimestamp(sort: Desc)])
+  @@map("ann_prediction_runs")
 }
 
 model Admin {

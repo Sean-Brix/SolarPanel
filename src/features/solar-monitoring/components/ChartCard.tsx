@@ -31,6 +31,7 @@ type ChartCardProps<T extends object> = {
   mobileHeight?: number
   headerAction?: React.ReactNode
   showVerticalGrid?: boolean
+  onPointClick?: (payload: T) => void
 }
 
 type TooltipPayload = {
@@ -88,6 +89,7 @@ export function ChartCard<T extends object>({
   mobileHeight = 220,
   headerAction,
   showVerticalGrid = false,
+  onPointClick,
 }: ChartCardProps<T>) {
   const heightStyles = {
     '--chart-height': `${height}px`,
@@ -95,7 +97,7 @@ export function ChartCard<T extends object>({
   } as React.CSSProperties
 
   return (
-    <Card>
+    <Card className="min-w-0">
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <CardTitle>{title}</CardTitle>
@@ -103,13 +105,29 @@ export function ChartCard<T extends object>({
         </div>
         {headerAction ? <div className="sm:shrink-0">{headerAction}</div> : null}
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="min-w-0 space-y-4">
         <div
-          className={cn('min-w-0 pl-1 sm:pl-0 h-[var(--chart-height-mobile)] sm:h-[var(--chart-height)]')}
+          className={cn('min-w-0 min-h-0 pl-1 sm:pl-0 h-[var(--chart-height-mobile)] sm:h-[var(--chart-height)]')}
           style={heightStyles}
         >
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={data} margin={{ top: 10, right: 10, left: -18, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={1} debounce={16}>
+            <ComposedChart
+              data={data}
+              margin={{ top: 10, right: 10, left: -18, bottom: 0 }}
+              onClick={
+                onPointClick
+                  ? (state) => {
+                      const payload = (
+                        state as { activePayload?: Array<{ payload?: T }> } | undefined
+                      )?.activePayload?.[0]?.payload
+
+                      if (payload) {
+                        onPointClick(payload)
+                      }
+                    }
+                  : undefined
+              }
+            >
               <CartesianGrid stroke="rgba(148, 163, 184, 0.08)" vertical={showVerticalGrid} />
               <XAxis
                 dataKey="label"

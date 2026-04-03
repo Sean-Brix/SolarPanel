@@ -1,6 +1,8 @@
-import mqtt from 'mqtt'
+import mqtt, { type IClientOptions, type MqttClient } from 'mqtt'
+import { EventEmitter } from 'node:events'
 import { prisma } from './prisma.js'
 import { enqueueWrite } from './writeQueue.js'
+import { parseAnnPredictionPayload, toAnnPredictionCreateData } from './annPrediction.js'
 
 type MQTTConfig = {
   brokerUrl: string
@@ -9,7 +11,17 @@ type MQTTConfig = {
   qos: 0 | 1 | 2
 }
 
-let client: mqtt.MqttClient | null = null
+type PanelType = 'fixed' | 'conventional' | 'ann'
+
+export type ReadingIngestEvent = {
+  panelType: PanelType
+  readingId: number
+  createdAt: string
+}
+
+let client: MqttClient | null = null
+const readingEventBus = new EventEmitter()
+readingEventBus.setMaxListeners(0)
 
 interface FixedReadingPayload {
   voltage: number
@@ -27,6 +39,55 @@ interface TrackerReadingPayload extends FixedReadingPayload {
   ldrRight: 0 | 1
 }
 
+type EnergySeedPanel = 'fixed' | 'conventional'
+
+type EnergySeedState = {
+  createdAt: Date
+  cumulativeEnergyKwh: number
+  loadedAtMs: number
+}
+
+const energySeedCache: Partial<Record<EnergySeedPanel, EnergySeedState>> = {}
+const ENERGY_SEED_MAX_AGE_MS = 5 * 60 * 1000
+
+function getEnergySeed(panel: EnergySeedPanel) {
+  const cached = energySeedCache[panel]
+  if (!cached) {
+    return null
+  }
+
+  if (Date.now() - cached.loadedAtMs > ENERGY_SEED_MAX_AGE_MS) {
+    delete energySeedCache[panel]
+    return null
+  }
+
+  return cached
+}
+
+function setEnergySeed(panel: EnergySeedPanel, createdAt: Date, cumulativeEnergyKwh: number) {
+  energySeedCache[panel] = {
+    createdAt,
+    cumulativeEnergyKwh,
+    loadedAtMs: Date.now(),
+  }
+}
+
+function emitReadingIngest(panelType: PanelType, readingId: number, createdAt: Date) {
+  const event: ReadingIngestEvent = {
+    panelType,
+    readingId,
+    createdAt: createdAt.toISOString(),
+  }
+  readingEventBus.emit('reading-ingested', event)
+}
+
+export function onReadingIngest(listener: (event: ReadingIngestEvent) => void): () => void {
+  readingEventBus.on('reading-ingested', listener)
+  return () => {
+    readingEventBus.off('reading-ingested', listener)
+  }
+}
+
 export function getMQTTConfig(): MQTTConfig {
   const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883'
   const username = process.env.MQTT_USERNAME || 'guest'
@@ -36,7 +97,7 @@ export function getMQTTConfig(): MQTTConfig {
   return { brokerUrl, username, password, qos }
 }
 
-export async function connectMQTT(): Promise<mqtt.MqttClient> {
+export async function connectMQTT(): Promise<MqttClient> {
   if (client && client.connected) {
     return client
   }
@@ -44,7 +105,7 @@ export async function connectMQTT(): Promise<mqtt.MqttClient> {
   const config = getMQTTConfig()
 
   return new Promise((resolve, reject) => {
-    const options: mqtt.IClientOptions = {
+    const options: IClientOptions = {
       username: config.username,
       password: config.password,
       clientId: `solarpanel-api-${Date.now()}`,
@@ -62,7 +123,7 @@ export async function connectMQTT(): Promise<mqtt.MqttClient> {
       resolve(client!)
     })
 
-    client.on('error', (err) => {
+    client.on('error', (err: Error) => {
       const errorMsg = err?.message || err?.toString?.() || String(err) || 'Unknown error'
       console.error('[MQTT] Connection error:', errorMsg)
       reject(new Error(`MQTT connection failed: ${errorMsg}`))
@@ -82,39 +143,105 @@ export async function connectMQTT(): Promise<mqtt.MqttClient> {
 // MQTT Subscribe: Panel Readings
 // ────────────────────────────────────────────────────────────────────────────
 
-function validateFixedReading(item: unknown): item is FixedReadingPayload {
-  if (!item || typeof item !== 'object') return false
-  const obj = item as Record<string, unknown>
-  return (
-    typeof obj.voltage === 'number' &&
-    typeof obj.current === 'number' &&
-    typeof obj.power === 'number'
-  )
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  return null
 }
 
-function validateTrackerReading(item: unknown): item is TrackerReadingPayload {
-  if (!validateFixedReading(item)) return false
-  const obj = item as unknown as Record<string, unknown>
-  return (
-    typeof obj.axisX === 'number' &&
-    typeof obj.axisY === 'number' &&
-    typeof obj.axisZ === 'number' &&
-    [0, 1].includes(obj.ldrTop as number) &&
-    [0, 1].includes(obj.ldrBottom as number) &&
-    [0, 1].includes(obj.ldrLeft as number) &&
-    [0, 1].includes(obj.ldrRight as number)
-  )
+function toBinary01(value: unknown): 0 | 1 | null {
+  if (value === true) return 1
+  if (value === false) return 0
+
+  const parsed = toFiniteNumber(value)
+  if (parsed === 0 || parsed === 1) {
+    return parsed
+  }
+
+  return null
+}
+
+function parseFixedReading(item: unknown): FixedReadingPayload | null {
+  if (!item || typeof item !== 'object') return null
+  const obj = item as Record<string, unknown>
+
+  const voltage = toFiniteNumber(obj.voltage)
+  const current = toFiniteNumber(obj.current)
+  const power = toFiniteNumber(obj.power)
+
+  if (voltage === null || current === null || power === null) {
+    return null
+  }
+
+  return { voltage, current, power }
+}
+
+function parseTrackerReading(item: unknown): TrackerReadingPayload | null {
+  const fixed = parseFixedReading(item)
+  if (!fixed || !item || typeof item !== 'object') {
+    return null
+  }
+
+  const obj = item as Record<string, unknown>
+  const axisX = toFiniteNumber(obj.axisX)
+  const axisY = toFiniteNumber(obj.axisY)
+  const axisZ = toFiniteNumber(obj.axisZ)
+  const ldrTop = toBinary01(obj.ldrTop)
+  const ldrBottom = toBinary01(obj.ldrBottom)
+  const ldrLeft = toBinary01(obj.ldrLeft)
+  const ldrRight = toBinary01(obj.ldrRight)
+
+  if (
+    axisX === null ||
+    axisY === null ||
+    axisZ === null ||
+    ldrTop === null ||
+    ldrBottom === null ||
+    ldrLeft === null ||
+    ldrRight === null
+  ) {
+    return null
+  }
+
+  return {
+    ...fixed,
+    axisX,
+    axisY,
+    axisZ,
+    ldrTop,
+    ldrBottom,
+    ldrLeft,
+    ldrRight,
+  }
 }
 
 async function handleFixedReading(payload: FixedReadingPayload) {
   const result = await enqueueWrite(async () => {
-    const previous = await prisma.fixedReading.findFirst({
-      orderBy: { createdAt: 'desc' },
-      select: { createdAt: true, cumulativeEnergyKwh: true },
-    })
+    let seed = getEnergySeed('fixed')
+    if (!seed) {
+      const previous = await prisma.fixedReading.findFirst({
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true, cumulativeEnergyKwh: true },
+      })
 
-    let runningCumulative = previous?.cumulativeEnergyKwh ?? 0
-    let lastTime = previous?.createdAt ?? new Date(Date.now() - 60_000)
+      if (previous) {
+        seed = {
+          createdAt: previous.createdAt,
+          cumulativeEnergyKwh: previous.cumulativeEnergyKwh,
+          loadedAtMs: Date.now(),
+        }
+      }
+    }
+
+    let runningCumulative = seed?.cumulativeEnergyKwh ?? 0
+    let lastTime = seed?.createdAt ?? new Date(Date.now() - 60_000)
 
     const currentTime = new Date()
     const deltaHours = Math.max((currentTime.getTime() - lastTime.getTime()) / 3_600_000, 1 / 60)
@@ -135,22 +262,35 @@ async function handleFixedReading(payload: FixedReadingPayload) {
       },
     })
 
+    setEnergySeed('fixed', created.createdAt, created.cumulativeEnergyKwh)
+
     return created
   })
 
   console.log('[MQTT] Fixed reading saved:', result.id)
+  emitReadingIngest('fixed', result.id, result.createdAt)
 }
 
-async function handleTrackerReading(panelType: 'conventional' | 'ann', payload: TrackerReadingPayload) {
+async function handleTrackerReading(panelType: 'conventional', payload: TrackerReadingPayload) {
   const result = await enqueueWrite(async () => {
-    const previousQuery = panelType === 'conventional' 
-      ? prisma.conventionalReading.findFirst({ orderBy: { createdAt: 'desc' }, select: { createdAt: true, cumulativeEnergyKwh: true } })
-      : prisma.annReading.findFirst({ orderBy: { createdAt: 'desc' }, select: { createdAt: true, cumulativeEnergyKwh: true } })
+    let seed = getEnergySeed('conventional')
+    if (!seed) {
+      const previous = await prisma.conventionalReading.findFirst({
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true, cumulativeEnergyKwh: true },
+      })
 
-    const previous = await previousQuery
+      if (previous) {
+        seed = {
+          createdAt: previous.createdAt,
+          cumulativeEnergyKwh: previous.cumulativeEnergyKwh,
+          loadedAtMs: Date.now(),
+        }
+      }
+    }
 
-    let runningCumulative = previous?.cumulativeEnergyKwh ?? 0
-    let lastTime = previous?.createdAt ?? new Date(Date.now() - 60_000)
+    let runningCumulative = seed?.cumulativeEnergyKwh ?? 0
+    let lastTime = seed?.createdAt ?? new Date(Date.now() - 60_000)
 
     const currentTime = new Date()
     const deltaHours = Math.max((currentTime.getTime() - lastTime.getTime()) / 3_600_000, 1 / 60)
@@ -161,45 +301,46 @@ async function handleTrackerReading(panelType: 'conventional' | 'ann', payload: 
 
     runningCumulative = Number((runningCumulative + energyKwh).toFixed(6))
 
-    const createQuery = panelType === 'conventional'
-      ? prisma.conventionalReading.create({
-          data: {
-            voltage: payload.voltage,
-            current: payload.current,
-            power: payload.power,
-            energyKwh,
-            cumulativeEnergyKwh: runningCumulative,
-            axisX: payload.axisX,
-            axisY: payload.axisY,
-            axisZ: payload.axisZ,
-            ldrTop: payload.ldrTop,
-            ldrBottom: payload.ldrBottom,
-            ldrLeft: payload.ldrLeft,
-            ldrRight: payload.ldrRight,
-          },
-        })
-      : prisma.annReading.create({
-          data: {
-            voltage: payload.voltage,
-            current: payload.current,
-            power: payload.power,
-            energyKwh,
-            cumulativeEnergyKwh: runningCumulative,
-            axisX: payload.axisX,
-            axisY: payload.axisY,
-            axisZ: payload.axisZ,
-            ldrTop: payload.ldrTop,
-            ldrBottom: payload.ldrBottom,
-            ldrLeft: payload.ldrLeft,
-            ldrRight: payload.ldrRight,
-          },
-        })
+    const created = await prisma.conventionalReading.create({
+      data: {
+        voltage: payload.voltage,
+        current: payload.current,
+        power: payload.power,
+        energyKwh,
+        cumulativeEnergyKwh: runningCumulative,
+        axisX: payload.axisX,
+        axisY: payload.axisY,
+        axisZ: payload.axisZ,
+        ldrTop: payload.ldrTop,
+        ldrBottom: payload.ldrBottom,
+        ldrLeft: payload.ldrLeft,
+        ldrRight: payload.ldrRight,
+      },
+    })
 
-    const created = await createQuery
+    setEnergySeed('conventional', created.createdAt, created.cumulativeEnergyKwh)
     return created
   })
 
   console.log(`[MQTT] ${panelType} reading saved:`, result.id)
+  emitReadingIngest(panelType, result.id, result.createdAt)
+}
+
+async function handleAnnPredictionRun(payload: unknown) {
+  const parsed = parseAnnPredictionPayload(payload)
+  if (!parsed) {
+    console.error('[MQTT] Invalid ANN reading payload:', payload)
+    return
+  }
+
+  const result = await enqueueWrite(async () => {
+    return prisma.annPredictionRun.create({
+      data: toAnnPredictionCreateData(parsed),
+    })
+  })
+
+  console.log('[MQTT] ann prediction run saved:', result.id)
+  emitReadingIngest('ann', result.id, result.createdAt)
 }
 
 export async function subscribeToReadings(): Promise<void> {
@@ -211,7 +352,7 @@ export async function subscribeToReadings(): Promise<void> {
   const topics = ['helios/readings/fixed', 'helios/readings/conventional', 'helios/readings/ann']
   const config = getMQTTConfig()
 
-  client.subscribe(topics, { qos: config.qos }, (err) => {
+  client.subscribe(topics, { qos: config.qos }, (err: Error | null | undefined) => {
     if (err) {
       console.error('[MQTT] Subscribe error:', err.message)
       return
@@ -219,28 +360,26 @@ export async function subscribeToReadings(): Promise<void> {
     console.log('[MQTT] Subscribed to topics:', topics)
   })
 
-  client.on('message', async (topic, buffer) => {
+  client.on('message', async (topic: string, buffer: Buffer) => {
     try {
       const payload = JSON.parse(buffer.toString())
 
       if (topic === 'helios/readings/fixed') {
-        if (!validateFixedReading(payload)) {
+        const parsed = parseFixedReading(payload)
+        if (!parsed) {
           console.error('[MQTT] Invalid fixed reading payload:', payload)
           return
         }
-        await handleFixedReading(payload)
+        await handleFixedReading(parsed)
       } else if (topic === 'helios/readings/conventional') {
-        if (!validateTrackerReading(payload)) {
+        const parsed = parseTrackerReading(payload)
+        if (!parsed) {
           console.error('[MQTT] Invalid conventional reading payload:', payload)
           return
         }
-        await handleTrackerReading('conventional', payload)
+        await handleTrackerReading('conventional', parsed)
       } else if (topic === 'helios/readings/ann') {
-        if (!validateTrackerReading(payload)) {
-          console.error('[MQTT] Invalid ANN reading payload:', payload)
-          return
-        }
-        await handleTrackerReading('ann', payload)
+        await handleAnnPredictionRun(payload)
       }
     } catch (err) {
       console.error('[MQTT] Message processing error on', topic, ':', err instanceof Error ? err.message : String(err))
@@ -261,7 +400,7 @@ export async function publishForecast(payload: object): Promise<void> {
       topic,
       JSON.stringify(payload),
       { qos: config.qos, retain: true },
-      (err) => {
+      (err: Error | null | undefined) => {
         if (err) {
           console.error(`[MQTT] Publish error on ${topic}:`, err.message)
           reject(err)
@@ -288,6 +427,6 @@ export async function disconnectMQTT(): Promise<void> {
   })
 }
 
-export function getMQTTClient(): mqtt.MqttClient | null {
+export function getMQTTClient(): MqttClient | null {
   return client
 }

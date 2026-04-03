@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchJsonCached } from '@/shared/lib/apiCache'
 import type {
   EnergyPoint,
   HistoryRow,
+  PaginatedResponse,
+  PaginationInfo,
   PanelKey,
   TimeRange,
   TimeSeriesPoint,
@@ -34,14 +36,6 @@ type ForecastSeries = {
   weatherCodes: number[]
 }
 
-let weatherCache: { expiresAt: number; data: ForecastSeries } | null = null
-
-const WEATHER_CACHE_MS = 30 * 60 * 1000
-const PANEL_HISTORY_CACHE_MS = 30 * 1000
-const PANEL_REFRESH_MS = 30 * 1000
-const FORECAST_LATITUDE = 13.7787
-const FORECAST_LONGITUDE = 121.024
-
 type PanelTrackerData = {
   sample: TimeSeriesPoint | null
   series: TimeSeriesPoint[]
@@ -58,11 +52,25 @@ type PanelTrackerData = {
   error: string | null
 }
 
-const RANGE_LIMITS: Record<TimeRange, number> = {
-  live: 40,
-  hourly: 120,
-  daily: 300,
-  weekly: 700,
+type PanelTrackerResult = PanelTrackerData & {
+  pagination: PaginationInfo
+  setPage: (page: number) => void
+  setPageSize: (pageSize: number) => void
+}
+
+let weatherCache: { expiresAt: number; data: ForecastSeries } | null = null
+
+const WEATHER_CACHE_MS = 30 * 60 * 1000
+const PANEL_HISTORY_CACHE_MS = 30 * 1000
+const PANEL_LATEST_CACHE_MS = 5 * 1000
+const FORECAST_LATITUDE = 13.7787
+const FORECAST_LONGITUDE = 121.024
+
+const DEFAULT_PAGE_SIZES: Record<TimeRange, number> = {
+  live: 20,
+  hourly: 25,
+  daily: 25,
+  weekly: 50,
 }
 
 function isTrackerReading(reading: ApiReading): reading is TrackerReading {
@@ -176,8 +184,12 @@ function buildData(
   range: TimeRange,
   readings: ApiReading[],
   forecastSeries: ForecastSeries | null,
+  latestReading: ApiReading | null,
 ): PanelTrackerData {
-  if (!readings.length) {
+  const normalizedReadings =
+    readings.length > 0 ? readings : latestReading ? [latestReading] : []
+
+  if (!normalizedReadings.length) {
     return {
       sample: null,
       series: [],
@@ -204,9 +216,9 @@ function buildData(
   let movementEnergy = 0
   let travelDegrees = 0
 
-  for (let index = 0; index < readings.length; index += 1) {
-    const current = readings[index]
-    const previous = index > 0 ? readings[index - 1] : undefined
+  for (let index = 0; index < normalizedReadings.length; index += 1) {
+    const current = normalizedReadings[index]
+    const previous = index > 0 ? normalizedReadings[index - 1] : undefined
 
     const currentAt = new Date(current.createdAt)
     const previousAt = previous ? new Date(previous.createdAt) : null
@@ -267,6 +279,7 @@ function buildData(
     })
 
     historyRows.push({
+      id: `${panelKey}-${current.id}`,
       timestamp: currentAt.toLocaleString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -284,9 +297,28 @@ function buildData(
     })
   }
 
-  const latest = readings[readings.length - 1]
+  const latest = latestReading ?? normalizedReadings[normalizedReadings.length - 1]
   const latestAt = new Date(latest.createdAt)
-  const peakPower = Math.max(...readings.map((item) => item.power))
+
+  const latestSample: TimeSeriesPoint = {
+    label: formatLabel(latestAt, range),
+    voltage: latest.voltage,
+    current: latest.current,
+    power: latest.power,
+    energy: energySeries[energySeries.length - 1]?.energy ?? 0,
+    efficiency: latest.power > 0 ? Math.min(100, (latest.power / 40) * 100) : 0,
+    movementCount,
+    movementCost: movementEnergy,
+  }
+
+  if (isTrackerReading(latest)) {
+    const latestLdrAverage =
+      (latest.ldrTop + latest.ldrBottom + latest.ldrLeft + latest.ldrRight) / 4
+    latestSample.irradiance = Math.round(250 + latestLdrAverage * 750)
+    latestSample.predictedPower = Number((latest.power * (0.97 + latestLdrAverage * 0.06)).toFixed(2))
+  }
+
+  const peakPower = Math.max(...normalizedReadings.map((item) => item.power))
 
   const tracker = isTrackerReading(latest)
     ? {
@@ -301,7 +333,7 @@ function buildData(
     : null
 
   return {
-    sample: series[series.length - 1] ?? null,
+    sample: latestSample,
     series,
     energySeries,
     historyRows: [...historyRows].reverse(),
@@ -325,8 +357,8 @@ function buildData(
   }
 }
 
-export function usePanelTrackerData(panelKey: PanelKey, range: TimeRange) {
-  const [data, setData] = useState<PanelTrackerData>({
+function initialData(): PanelTrackerData {
+  return {
     sample: null,
     series: [],
     energySeries: [],
@@ -340,38 +372,92 @@ export function usePanelTrackerData(panelKey: PanelKey, range: TimeRange) {
     lastUpdated: new Date(),
     loading: true,
     error: null,
+  }
+}
+
+export function usePanelTrackerData(panelKey: PanelKey, range: TimeRange): PanelTrackerResult {
+  const defaultPageSize = useMemo(() => DEFAULT_PAGE_SIZES[range], [range])
+  const [currentPage, setCurrentPage] = useState(1)
+  const [currentPageSize, setCurrentPageSize] = useState(defaultPageSize)
+  const [data, setData] = useState<PanelTrackerData>(() => initialData())
+  const [pagination, setPagination] = useState<PaginationInfo>({
+    page: 1,
+    pageSize: defaultPageSize,
+    totalCount: 0,
+    totalPages: 1,
+    hasPrev: false,
+    hasNext: false,
   })
 
-  const limit = useMemo(() => RANGE_LIMITS[range], [range])
+  const setPage = useCallback((page: number) => {
+    const normalizedPage = Math.max(1, Math.trunc(page || 1))
+    setCurrentPage(normalizedPage)
+  }, [])
+
+  const setPageSize = useCallback(
+    (pageSize: number) => {
+      const normalizedPageSize = Math.min(Math.max(Math.trunc(pageSize || defaultPageSize), 1), 500)
+      setCurrentPageSize(normalizedPageSize)
+      setCurrentPage(1)
+    },
+    [defaultPageSize],
+  )
+
+  useEffect(() => {
+    setCurrentPage(1)
+    setCurrentPageSize(defaultPageSize)
+  }, [panelKey, defaultPageSize])
 
   useEffect(() => {
     let active = true
 
-    const load = async () => {
+    const load = async (force = false) => {
       setData((prev) => ({ ...prev, loading: true, error: null }))
 
       try {
-        const [response, forecastSeries] = await Promise.all([
-          fetchJsonCached<ApiReading[]>(`/api/${panelKey}/history?limit=${limit}`, {
+        const historyUrl = `/api/${panelKey}/history?page=${currentPage}&pageSize=${currentPageSize}`
+        const [historyResponse, latestResponse, forecastSeries] = await Promise.all([
+          fetchJsonCached<PaginatedResponse<ApiReading>>(historyUrl, {
             ttlMs: PANEL_HISTORY_CACHE_MS,
+            force,
+          }),
+          fetchJsonCached<ApiReading>(`/api/${panelKey}/latest`, {
+            ttlMs: PANEL_LATEST_CACHE_MS,
+            force,
           }),
           getForecastSeries(),
         ])
 
-        if (!response.ok) {
-          throw new Error(`Failed to load ${panelKey} history (${response.status})`)
+        if (!historyResponse.ok) {
+          throw new Error(`Failed to load ${panelKey} history (${historyResponse.status})`)
         }
 
-        const payload = response.body
-        const sorted = [...payload].sort(
-          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-        )
+        let latestReading: ApiReading | null = null
+        if (latestResponse.ok) {
+          latestReading = latestResponse.body
+        } else if (latestResponse.status !== 404) {
+          throw new Error(`Failed to load ${panelKey} latest (${latestResponse.status})`)
+        }
 
         if (!active) {
           return
         }
 
-        setData(buildData(panelKey, range, sorted, forecastSeries))
+        const payload = historyResponse.body
+        const sorted = [...payload.items].sort(
+          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+        )
+
+        setData(buildData(panelKey, range, sorted, forecastSeries, latestReading))
+        setPagination(payload.pagination)
+
+        if (payload.pagination.page !== currentPage) {
+          setCurrentPage(payload.pagination.page)
+        }
+
+        if (payload.pagination.pageSize !== currentPageSize) {
+          setCurrentPageSize(payload.pagination.pageSize)
+        }
       } catch (error) {
         if (!active) {
           return
@@ -386,17 +472,35 @@ export function usePanelTrackerData(panelKey: PanelKey, range: TimeRange) {
     }
 
     void load()
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void load()
+
+    const events = new EventSource('/api/events/readings')
+    const onReadingEvent = (message: MessageEvent<string>) => {
+      try {
+        const payload = JSON.parse(message.data) as { panelType?: PanelKey }
+
+        if (payload.panelType === panelKey && document.visibilityState === 'visible') {
+          void load(true)
+        }
+      } catch {
+        if (document.visibilityState === 'visible') {
+          void load(true)
+        }
       }
-    }, PANEL_REFRESH_MS)
+    }
+
+    events.addEventListener('reading', onReadingEvent as EventListener)
 
     return () => {
       active = false
-      window.clearInterval(timer)
+      events.removeEventListener('reading', onReadingEvent as EventListener)
+      events.close()
     }
-  }, [panelKey, range, limit])
+  }, [panelKey, range, currentPage, currentPageSize])
 
-  return data
+  return {
+    ...data,
+    pagination,
+    setPage,
+    setPageSize,
+  }
 }

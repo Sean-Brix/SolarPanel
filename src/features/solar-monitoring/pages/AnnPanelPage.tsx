@@ -1,180 +1,669 @@
-import { useMemo } from 'react'
-import {
-  BatteryCharging,
-  CloudSun,
-  Droplets,
-  GaugeCircle,
-  ThermometerSun,
-  Waves,
-} from 'lucide-react'
+import { useDeferredValue, useMemo, useState } from 'react'
+import { BrainCircuit, CheckCircle2, Clock3, Waves } from 'lucide-react'
 import { ChartCard } from '@/features/solar-monitoring/components/ChartCard'
-import { HistoricalLogTable } from '@/features/solar-monitoring/components/HistoricalLogTable'
-import { MetricCard } from '@/features/solar-monitoring/components/MetricCard'
-import { NotificationPanel } from '@/features/solar-monitoring/components/NotificationPanel'
 import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
-import { PredictionCard } from '@/features/solar-monitoring/components/PredictionCard'
-import { TimelineCard } from '@/features/solar-monitoring/components/TimelineCard'
-import { TrackerPositionCard } from '@/features/solar-monitoring/components/TrackerPositionCard'
-import { WeatherCard } from '@/features/solar-monitoring/components/WeatherCard'
-import { usePanelTrackerData } from '@/features/solar-monitoring/hooks/usePanelTrackerData'
 import {
-  environments,
-  notifications,
-  panels,
-  weather,
-} from '@/features/solar-monitoring/data/mock-data'
-import type { TimeRange } from '@/shared/types/solar'
+  useAnnDashboardData,
+  type AnnDashboardFilters,
+} from '@/features/solar-monitoring/hooks/useAnnDashboardData'
+import { cn } from '@/shared/lib/cn'
+import { formatDateTime, formatNumber } from '@/shared/lib/formatters'
+import type { AnnFieldResult, AnnRange, AnnRunSummary } from '@/shared/types/ann'
+import { Badge } from '@/shared/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/ui/card'
+import { ScrollArea } from '@/shared/ui/scroll-area'
+
+type AnnView = 'accuracy' | 'weather' | 'field' | 'history' | 'detail'
+
+const ANN_RANGE_LABELS: Record<AnnRange, string> = {
+  '1h': 'Last hour',
+  '24h': 'Last 24 hours',
+  '7d': 'Last 7 days',
+  '30d': 'Last 30 days',
+}
+
+const ANN_VIEW_OPTIONS: Array<{ value: AnnView; label: string }> = [
+  { value: 'accuracy', label: 'Accuracy over time' },
+  { value: 'weather', label: 'Weather checks over time' },
+  { value: 'field', label: 'Field compare over time' },
+  { value: 'history', label: 'Run history' },
+  { value: 'detail', label: 'Selected run detail' },
+]
+
+function statusVariant(value: string) {
+  const normalized = value.toUpperCase()
+
+  if (normalized === 'CORRECT' || normalized === 'OK') return 'success' as const
+  if (normalized === 'INCORRECT' || normalized === 'MISMATCH') return 'danger' as const
+  if (normalized === 'UNKNOWN') return 'neutral' as const
+  return 'warning' as const
+}
+
+function formatRelativeTime(isoTimestamp: string) {
+  const deltaSeconds = Math.max(0, Math.round((Date.now() - new Date(isoTimestamp).getTime()) / 1000))
+
+  if (deltaSeconds < 60) return `${deltaSeconds}s ago`
+
+  const deltaMinutes = Math.round(deltaSeconds / 60)
+  if (deltaMinutes < 60) return `${deltaMinutes}m ago`
+
+  const deltaHours = Math.round(deltaMinutes / 60)
+  if (deltaHours < 24) return `${deltaHours}h ago`
+
+  return `${Math.round(deltaHours / 24)}d ago`
+}
+
+function formatFieldValue(fieldName: string, value: number) {
+  const normalized = fieldName.toUpperCase()
+
+  if (normalized === 'VOLTAGE') return `${formatNumber(value, 2)} V`
+  if (normalized === 'CURRENT_MA') return `${formatNumber(value, 2)} mA`
+  if (normalized === 'POWER_MW') return `${formatNumber(value, 2)} mW`
+  if (normalized.startsWith('RELAY')) return formatNumber(value, 0)
+  return formatNumber(value, 2)
+}
+
+function mismatchRatio(field: AnnFieldResult) {
+  if (field.tolerance > 0) {
+    return field.difference / field.tolerance
+  }
+
+  return field.difference === 0 ? 0 : 1
+}
+
+function SummaryTile({
+  icon: Icon,
+  label,
+  value,
+  note,
+  variant = 'neutral',
+}: {
+  icon: typeof CheckCircle2
+  label: string
+  value: string
+  note: string
+  variant?: 'neutral' | 'success' | 'warning' | 'danger' | 'info'
+}) {
+  const toneClasses = {
+    neutral: 'border-slate-200 bg-slate-100/80 dark:border-white/10 dark:bg-white/[0.03]',
+    info: 'border-cyan-400/20 bg-cyan-400/10',
+    success: 'border-emerald-400/20 bg-emerald-400/10',
+    warning: 'border-amber-400/20 bg-amber-400/10',
+    danger: 'border-rose-400/20 bg-rose-400/10',
+  }
+
+  return (
+    <Card className={cn('overflow-hidden', toneClasses[variant])}>
+      <CardContent className="pt-4 sm:pt-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{label}</p>
+            <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white sm:text-2xl">{value}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white/85 p-3 dark:border-white/10 dark:bg-slate-950/50">
+            <Icon className="h-5 w-5 text-slate-900 dark:text-white" />
+          </div>
+        </div>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{note}</p>
+      </CardContent>
+    </Card>
+  )
+}
+
+type AnnHistoryTableProps = {
+  runs: AnnRunSummary[]
+  selectedRunId: number | null
+  onSelectRun: (runId: number) => void
+  page: number
+  pageSize: number
+  totalPages: number
+  totalRuns: number
+  hasPrev: boolean
+  hasNext: boolean
+  onPageChange: (page: number) => void
+  onPageSizeChange: (pageSize: number) => void
+  loading: boolean
+}
+
+function AnnHistoryTable({
+  runs,
+  selectedRunId,
+  onSelectRun,
+  page,
+  pageSize,
+  totalPages,
+  totalRuns,
+  hasPrev,
+  hasNext,
+  onPageChange,
+  onPageSizeChange,
+  loading,
+}: AnnHistoryTableProps) {
+  const safeTotalPages = Math.max(totalPages, 1)
+  const safePage = Math.min(Math.max(page, 1), safeTotalPages)
+  const firstRunIndex = totalRuns === 0 ? 0 : (safePage - 1) * pageSize + 1
+  const lastRunIndex = Math.min(safePage * pageSize, totalRuns)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Run History</CardTitle>
+        <CardDescription>
+          Server-paginated ANN run summaries. Select a run to open detail view.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <p className="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+            Showing {firstRunIndex}-{lastRunIndex} of {totalRuns}
+          </p>
+
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <label className="flex items-center gap-2 text-xs text-slate-600 sm:text-sm dark:text-slate-300">
+              <span>Rows</span>
+              <select
+                value={pageSize}
+                onChange={(event) => onPageSizeChange(Number(event.target.value))}
+                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+              </select>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => onPageChange(Math.max(1, safePage - 1))}
+              disabled={!hasPrev}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              Prev
+            </button>
+            <span className="text-xs text-slate-600 sm:text-sm dark:text-slate-300">
+              Page {safePage} / {safeTotalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => onPageChange(Math.min(safeTotalPages, safePage + 1))}
+              disabled={!hasNext}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+
+        {loading ? (
+          <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">Loading page...</p>
+        ) : null}
+
+        <ScrollArea className="w-full">
+          <div className="min-w-[940px]">
+            <table className="w-full border-separate border-spacing-y-2 text-left text-sm">
+              <thead>
+                <tr className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                  <th className="pb-2">Timestamp</th>
+                  <th className="pb-2">Overall</th>
+                  <th className="pb-2">Sensor</th>
+                  <th className="pb-2">Weather</th>
+                  <th className="pb-2">Accuracy</th>
+                  <th className="pb-2">Worst Field</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((run) => (
+                  <tr
+                    key={run.id}
+                    onClick={() => onSelectRun(run.id)}
+                    className={cn(
+                      'cursor-pointer rounded-2xl text-slate-700 transition dark:text-slate-300',
+                      selectedRunId === run.id
+                        ? 'bg-cyan-400/10'
+                        : 'bg-slate-100/80 hover:bg-slate-200/80 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]',
+                    )}
+                  >
+                    <td className="rounded-l-2xl border-y border-l border-slate-200/90 px-4 py-3 dark:border-white/8">
+                      {formatDateTime(new Date(run.createdAt))}
+                    </td>
+                    <td className="border-y border-slate-200/90 px-4 py-3 dark:border-white/8">
+                      <Badge variant={statusVariant(run.overallResult)}>{run.overallResult}</Badge>
+                    </td>
+                    <td className="border-y border-slate-200/90 px-4 py-3 dark:border-white/8">
+                      <Badge variant={statusVariant(run.sensorResult)}>{run.sensorResult}</Badge>
+                    </td>
+                    <td className="border-y border-slate-200/90 px-4 py-3 dark:border-white/8">
+                      {run.weatherCheck.matchCount}/{run.weatherCheck.total}
+                    </td>
+                    <td className="border-y border-slate-200/90 px-4 py-3 dark:border-white/8">
+                      {formatNumber(run.accuracyPct, 1)}%
+                    </td>
+                    <td className="rounded-r-2xl border-y border-r border-slate-200/90 px-4 py-3 dark:border-white/8">
+                      {run.worstField ? `${run.worstField.name} (${formatNumber(run.worstField.ratio, 2)}x)` : 'N/A'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </ScrollArea>
+      </CardContent>
+    </Card>
+  )
+}
 
 export function AnnPanelPage() {
-  const panel = panels.ann
-  const range = useMemo<TimeRange>(() => 'daily', [])
-  const telemetry = usePanelTrackerData('ann', range)
-  const sample = telemetry.sample ?? {
-    label: 'N/A',
-    voltage: 0,
-    current: 0,
-    power: 0,
-    energy: 0,
-    irradiance: 0,
-    predictedPower: 0,
+  const [view, setView] = useState<AnnView>('accuracy')
+  const includeTrend = view === 'accuracy' || view === 'weather' || view === 'field'
+
+  const {
+    range,
+    setRange,
+    resolution,
+    filters,
+    setFilters,
+    historyPage,
+    historyPageSize,
+    setHistoryPage,
+    setHistoryPageSize,
+    selectedField,
+    setSelectedField,
+    selectedRunId,
+    setSelectedRunId,
+    history,
+    latestRun,
+    selectedRun,
+    loading,
+    detailLoading,
+    error,
+    fieldOptions,
+  } = useAnnDashboardData({ includeTrend })
+
+  const trend = useDeferredValue(history?.trend ?? [])
+  const detailRun = selectedRun ?? latestRun
+  const runs = history?.runs ?? []
+  const currentHistoryPage = history?.meta.page ?? historyPage
+  const currentHistoryPageSize = history?.meta.pageSize ?? historyPageSize
+  const historyTotalPages = history?.meta.totalPages ?? 1
+  const historyTotalRuns = history?.meta.totalRuns ?? 0
+  const historyHasPrev = history?.meta.hasPrev ?? false
+  const historyHasNext = history?.meta.hasNext ?? false
+
+  const fieldName = fieldOptions.includes(selectedField)
+    ? selectedField
+    : fieldOptions[0] ?? 'VOLTAGE'
+
+  const accuracyData = useMemo(
+    () =>
+      trend.map((point) => ({
+        label: point.label,
+        accuracyPct: point.accuracyPct,
+        overallCorrectPct: point.overallCorrectPct,
+        latestRunId: point.latestRunId,
+      })),
+    [trend],
+  )
+
+  const weatherTrendData = useMemo(
+    () =>
+      trend.map((point) => ({
+        label: point.label,
+        weatherCode: point.weatherCodePassPct,
+        time: point.timePassPct,
+        temperature: point.tempPassPct,
+        humidity: point.humidityPassPct,
+        latestRunId: point.latestRunId,
+      })),
+    [trend],
+  )
+
+  const fieldCompareData = useMemo(
+    () =>
+      trend.map((point) => {
+        const stat = point.fieldStats[fieldName]
+
+        return {
+          label: point.label,
+          predicted: stat?.predicted,
+          actual: stat?.actual,
+          latestRunId: point.latestRunId,
+        }
+      }),
+    [fieldName, trend],
+  )
+
+  const topMismatches = useMemo(() => {
+    if (!detailRun) {
+      return []
+    }
+
+    return [...detailRun.predictionCheck.fields]
+      .sort((left, right) => mismatchRatio(right) - mismatchRatio(left))
+      .slice(0, 6)
+  }, [detailRun])
+
+  const handleFilterChange = <K extends keyof AnnDashboardFilters>(
+    key: K,
+    value: AnnDashboardFilters[K],
+  ) => {
+    setFilters((current) => ({
+      ...current,
+      [key]: value,
+    }))
+  }
+
+  const openRun = (runId: number) => {
+    setSelectedRunId(runId)
+    setView('detail')
   }
 
   return (
     <div className="space-y-4 pb-10">
       <PageHeader
-        eyebrow="ANN smart panel"
+        eyebrow="ANN prediction monitor"
         title="ANN Smart Panel"
-        description="Smart tracking with prediction and weather context."
-        connection={panel.connection}
-        status={panel.status}
-        lastUpdated={telemetry.lastUpdated}
+        description="Time-series monitoring of ANN prediction accuracy using persisted run history."
+        connection={latestRun ? `${latestRun.deviceId} | ${latestRun.source}` : 'Awaiting ANN data'}
+        status={latestRun ? (latestRun.overallResult === 'CORRECT' ? 'normal' : 'warning') : 'warning'}
+        lastUpdated={latestRun ? new Date(latestRun.createdAt) : new Date()}
       />
 
-      <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-6">
-        <MetricCard
-          icon={GaugeCircle}
-          label="Voltage"
-          value={sample.voltage}
-          unit="V"
-          note="Live predicted-control voltage"
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <SummaryTile
+          icon={CheckCircle2}
+          label="Overall"
+          value={latestRun?.overallResult ?? 'WAITING'}
+          note="Latest run verdict"
+          variant={latestRun ? statusVariant(latestRun.overallResult) : 'neutral'}
         />
-        <MetricCard
+        <SummaryTile
+          icon={BrainCircuit}
+          label="Sensor"
+          value={latestRun?.sensorResult ?? 'WAITING'}
+          note="Sensor agreement"
+          variant={latestRun ? statusVariant(latestRun.sensorResult) : 'neutral'}
+        />
+        <SummaryTile
           icon={Waves}
-          label="Current"
-          value={sample.current}
-          unit="A"
-          note="Current with selective tracking"
-          tone="lime"
+          label="Weather Match"
+          value={
+            latestRun
+              ? `${latestRun.weatherCheck.matchCount}/${latestRun.weatherCheck.total}`
+              : 'N/A'
+          }
+          note="Code, time, temp, humidity"
+          variant={
+            latestRun
+              ? latestRun.weatherCheck.matchCount === latestRun.weatherCheck.total
+                ? 'success'
+                : 'warning'
+              : 'neutral'
+          }
         />
-        <MetricCard
-          icon={BatteryCharging}
-          label="Power"
-          value={sample.power}
-          note="Actual output right now"
-          tone="amber"
-          format="power"
-        />
-        <MetricCard
-          icon={ThermometerSun}
-          label="Temperature"
-          value={panel.metrics.temperature ?? 0}
-          unit="C"
-          note="Ambient thermal input"
-        />
-        <MetricCard
-          icon={Droplets}
-          label="Humidity"
-          value={panel.metrics.humidity ?? 0}
-          unit="%"
-          note="Moisture context for sensor state"
-          tone="rose"
-        />
-        <MetricCard
-          icon={CloudSun}
-          label="Irradiance"
-          value={sample.irradiance ?? 0}
-          unit="W/m2"
-          note="Solar resource observed now"
-          tone="lime"
-        />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-        <WeatherCard environment={environments.ann} weather={weather} />
-        {telemetry.tracker ? <TrackerPositionCard tracker={telemetry.tracker} /> : null}
-      </div>
-
-      <NotificationPanel items={notifications.ann} />
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <ChartCard
-          title="Electrical Performance"
-          subtitle="Electrical behavior across the selected window."
-          data={telemetry.series}
-          series={[
-            { key: 'voltage', label: 'Voltage', color: '#38bdf8', type: 'line' },
-            { key: 'current', label: 'Current', color: '#bef264', type: 'line' },
-            { key: 'power', label: 'Power', color: '#fbbf24', type: 'area' },
-          ]}
-        />
-        <ChartCard
-          title="Irradiance and Power"
-          subtitle="Energy input vs panel output."
-          data={telemetry.series}
-          series={[
-            { key: 'irradiance', label: 'Irradiance', color: '#5eead4', type: 'area' },
-            { key: 'power', label: 'Power', color: '#fbbf24', type: 'line' },
-          ]}
-        />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <ChartCard
-          title="Predicted vs Actual Power"
-          subtitle="Prediction compared to measured output."
-          data={telemetry.series}
-          series={[
-            { key: 'predictedPower', label: 'Predicted', color: '#38bdf8', type: 'line' },
-            { key: 'power', label: 'Actual', color: '#bef264', type: 'line' },
-          ]}
-          formatValue={(value) => `${value.toFixed(1)} W`}
-        />
-        <ChartCard
-          title="Energy Trend"
-          subtitle="Energy accumulation over time."
-          data={telemetry.energySeries}
-          series={[
-            { key: 'energy', label: 'Energy', color: '#38bdf8', type: 'bar' },
-            { key: 'cumulative', label: 'Cumulative', color: '#bef264', type: 'line' },
-          ]}
-          formatValue={(value) => `${value.toFixed(2)} kWh`}
+        <SummaryTile
+          icon={Clock3}
+          label="Last Update"
+          value={latestRun ? formatRelativeTime(latestRun.createdAt) : 'Waiting'}
+          note={latestRun ? formatDateTime(new Date(latestRun.createdAt)) : 'No runs yet'}
+          variant={latestRun ? 'info' : 'neutral'}
         />
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Prediction Analytics</CardTitle>
-          <CardDescription>Forecast-backed recommendations.</CardDescription>
+          <CardTitle>ANN Data View</CardTitle>
+          <CardDescription>
+            Switch datasets from one dropdown to avoid long scrolling and focus on one signal at a time.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
-          {panel.intelligence?.predictions.map((item) => (
-            <PredictionCard key={item.label} item={item} />
-          ))}
+        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <label className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+            <span className="text-xs uppercase tracking-[0.14em] text-slate-500">View</span>
+            <select
+              value={view}
+              onChange={(event) => setView(event.target.value as AnnView)}
+              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+            >
+              {ANN_VIEW_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+            <span className="text-xs uppercase tracking-[0.14em] text-slate-500">Range</span>
+            <select
+              value={range}
+              onChange={(event) => setRange(event.target.value as AnnRange)}
+              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+            >
+              {Object.entries(ANN_RANGE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+            <span className="text-xs uppercase tracking-[0.14em] text-slate-500">Overall Filter</span>
+            <select
+              value={filters.overallResult}
+              onChange={(event) =>
+                handleFilterChange(
+                  'overallResult',
+                  event.target.value as AnnDashboardFilters['overallResult'],
+                )
+              }
+              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+            >
+              <option value="all">All runs</option>
+              <option value="CORRECT">Correct only</option>
+              <option value="INCORRECT">Incorrect only</option>
+            </select>
+          </label>
+
+          <label className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+            <span className="text-xs uppercase tracking-[0.14em] text-slate-500">Sensor Filter</span>
+            <select
+              value={filters.sensorResult}
+              onChange={(event) =>
+                handleFilterChange(
+                  'sensorResult',
+                  event.target.value as AnnDashboardFilters['sensorResult'],
+                )
+              }
+              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+            >
+              <option value="all">All states</option>
+              <option value="CORRECT">Correct only</option>
+              <option value="INCORRECT">Incorrect only</option>
+            </select>
+          </label>
+
+          {view === 'field' ? (
+            <label className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+              <span className="text-xs uppercase tracking-[0.14em] text-slate-500">Field</span>
+              <select
+                value={fieldName}
+                onChange={(event) => setSelectedField(event.target.value)}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+              >
+                {fieldOptions.map((field) => (
+                  <option key={field} value={field}>
+                    {field}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-slate-100/80 px-4 py-3 text-sm text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300">
+              Resolution: {resolution}
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <TimelineCard
-        title="ANN Decision Timeline"
-        description="Forecast-driven control events."
-        items={panel.timeline}
-      />
+      {error ? (
+        <Card>
+          <CardContent className="pt-4 sm:pt-5">
+            <p className="text-sm text-rose-700 dark:text-rose-200">{error}</p>
+          </CardContent>
+        </Card>
+      ) : null}
 
-      <HistoricalLogTable
-        rows={telemetry.historyRows}
-        title="ANN Historical Log"
-        description="Prediction snapshots with measured values from database telemetry."
-      />
+      {view === 'accuracy' ? (
+        <ChartCard
+          title="Prediction Accuracy Time Series"
+          subtitle="ANN historical accuracy derived from persisted run history buckets."
+          data={accuracyData}
+          series={[
+            { key: 'accuracyPct', label: 'Accuracy', color: '#22c55e', type: 'line' },
+            { key: 'overallCorrectPct', label: 'Overall Correct', color: '#38bdf8', type: 'area' },
+          ]}
+          formatValue={(value) => `${formatNumber(value, 1)}%`}
+          onPointClick={(payload) => openRun(payload.latestRunId)}
+        />
+      ) : null}
+
+      {view === 'weather' ? (
+        <ChartCard
+          title="Weather Check Time Series"
+          subtitle="Pass rates for weather code, time, temperature, and humidity checks over history."
+          data={weatherTrendData}
+          series={[
+            { key: 'weatherCode', label: 'Weather Code', color: '#38bdf8', type: 'line' },
+            { key: 'time', label: 'Time', color: '#a3e635', type: 'line' },
+            { key: 'temperature', label: 'Temperature', color: '#f59e0b', type: 'line' },
+            { key: 'humidity', label: 'Humidity', color: '#f43f5e', type: 'line' },
+          ]}
+          formatValue={(value) => `${formatNumber(value, 1)}%`}
+          onPointClick={(payload) => openRun(payload.latestRunId)}
+        />
+      ) : null}
+
+      {view === 'field' ? (
+        <ChartCard
+          title={`Field History: ${fieldName}`}
+          subtitle="Predicted vs actual values over ANN history buckets."
+          data={fieldCompareData}
+          series={[
+            { key: 'predicted', label: 'Predicted', color: '#38bdf8', type: 'line' },
+            { key: 'actual', label: 'Actual', color: '#22c55e', type: 'line' },
+          ]}
+          formatValue={(value) => formatFieldValue(fieldName, value)}
+          onPointClick={(payload) => openRun(payload.latestRunId)}
+        />
+      ) : null}
+
+      {view === 'history' ? (
+        <AnnHistoryTable
+          runs={runs}
+          selectedRunId={selectedRunId}
+          onSelectRun={openRun}
+          page={currentHistoryPage}
+          pageSize={currentHistoryPageSize}
+          totalPages={historyTotalPages}
+          totalRuns={historyTotalRuns}
+          hasPrev={historyHasPrev}
+          hasNext={historyHasNext}
+          onPageChange={setHistoryPage}
+          onPageSizeChange={setHistoryPageSize}
+          loading={loading}
+        />
+      ) : null}
+
+      {view === 'detail' ? (
+        detailRun ? (
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Run Detail</CardTitle>
+                <CardDescription>Selected ANN prediction run summary and mismatch highlights.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="neutral">Run ID {detailRun.id}</Badge>
+                  <Badge variant="neutral">Prediction ID {detailRun.predictionId ?? 'N/A'}</Badge>
+                  <Badge variant={statusVariant(detailRun.overallResult)}>{detailRun.overallResult}</Badge>
+                  <Badge variant={statusVariant(detailRun.sensorResult)}>{detailRun.sensorResult}</Badge>
+                  <Badge variant="info">{formatDateTime(new Date(detailRun.createdAt))}</Badge>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-100/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Weather</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                      {detailRun.weather.actual.weather}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-100/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Weather Checks</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                      {detailRun.weatherCheck.matchCount}/{detailRun.weatherCheck.total}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-100/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Accuracy</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                      {formatNumber(detailRun.accuracyPct, 1)}%
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-100/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Relay Memory</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                      {detailRun.relayMemory.applied ? 'Applied' : 'Not applied'}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Top Mismatches</CardTitle>
+                <CardDescription>Largest difference-to-tolerance ratios in this run.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {topMismatches.map((field) => (
+                  <div
+                    key={field.name}
+                    className="rounded-2xl border border-slate-200 bg-slate-100/80 p-4 dark:border-white/10 dark:bg-white/[0.03]"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">{field.name}</p>
+                      <Badge variant={statusVariant(field.status)}>{field.status}</Badge>
+                    </div>
+                    <div className="mt-2 grid gap-2 text-sm text-slate-700 dark:text-slate-300 sm:grid-cols-2">
+                      <p>Predicted: {formatFieldValue(field.name, field.predicted)}</p>
+                      <p>Actual: {formatFieldValue(field.name, field.actual)}</p>
+                      <p>Difference: {formatFieldValue(field.name, field.difference)}</p>
+                      <p>Tolerance: {formatFieldValue(field.name, field.tolerance)}</p>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
+          <Card>
+            <CardContent className="pt-4 sm:pt-5">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Select a run from a chart point or history row to open detail view.
+              </p>
+            </CardContent>
+          </Card>
+        )
+      ) : null}
+
+      {(loading || detailLoading) && !error ? (
+        <Card>
+          <CardContent className="pt-4 sm:pt-5">
+            <p className="text-sm text-slate-600 dark:text-slate-300">Refreshing ANN data...</p>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   )
 }

@@ -1,52 +1,124 @@
 import { Router } from 'express'
-import { enqueueWrite } from '../lib/writeQueue.js'
 import { prisma } from '../lib/prisma.js'
+import {
+  ANN_DEFAULT_RESOLUTION,
+  ANN_RANGE_TO_MS,
+  ANN_RUN_DETAIL_SELECT,
+  ANN_RUN_SUMMARY_SELECT,
+  buildAnnHistoryResponse,
+  parseAnnHistoryFilters,
+  toAnnRunDetail,
+} from '../lib/annPrediction.js'
+import type { AnnRange, AnnResolution } from '../lib/annPrediction.js'
 
 const router = Router()
-/**
- * GET /api/ann/latest
- * Data source: MQTT topic helios/readings/ann
- * Returns the most recent ANN panel reading.
- */
-router.get('/latest', async (_req, res) => {
-  const reading = await prisma.annReading.findFirst({
-    orderBy: { createdAt: 'desc' },
-  })
 
-  if (!reading) {
-    return res.status(404).json({ message: 'No readings found' })
+const VALID_RANGES: AnnRange[] = ['1h', '24h', '7d', '30d']
+const VALID_RESOLUTIONS: AnnResolution[] = ['raw', '5m', '1h', '1d']
+
+function parsePositiveInteger(value: unknown, fallback: number) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback
   }
 
-  return res.json(reading)
+  return Math.trunc(parsed)
+}
+
+function parseBoolean(value: unknown, fallback: boolean) {
+  if (typeof value !== 'string') {
+    return fallback
+  }
+
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') {
+    return true
+  }
+
+  if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off') {
+    return false
+  }
+
+  return fallback
+}
+
+router.get('/latest', async (_req, res) => {
+  const record = await prisma.annPredictionRun.findFirst({
+    // Latest should reflect newest MQTT-ingested run, even if the device timestamp is older.
+    orderBy: { createdAt: 'desc' },
+    select: ANN_RUN_DETAIL_SELECT,
+  })
+
+  if (!record) {
+    return res.status(404).json({ message: 'No ANN prediction runs found' })
+  }
+
+  return res.json(toAnnRunDetail(record))
 })
 
-/**
- * GET /api/ann/history?limit=50&since=ISO_DATE
- * Data source: MQTT topic helios/readings/ann
- * Returns recent ANN panel readings, newest first.
- * Query params:
- *   limit  – max records to return (default 50, max 100000)
- *   since  – ISO 8601 date string; only return records after this timestamp
- */
 router.get('/history', async (req, res) => {
-  const limit = Math.min(Number(req.query.limit ?? 50), 100000)
-  const since = typeof req.query.since === 'string' ? new Date(req.query.since) : undefined
-
-  if (Number.isNaN(limit) || limit < 1) {
-    return res.status(400).json({ message: 'limit must be a positive integer' })
+  const requestedRange = typeof req.query.range === 'string' ? req.query.range : '1h'
+  if (!VALID_RANGES.includes(requestedRange as AnnRange)) {
+    return res.status(400).json({ message: 'range must be one of 1h, 24h, 7d, 30d' })
   }
 
-  if (since && isNaN(since.getTime())) {
-    return res.status(400).json({ message: 'since must be a valid ISO 8601 date string' })
+  const range = requestedRange as AnnRange
+  const requestedResolution =
+    typeof req.query.resolution === 'string' ? req.query.resolution : ANN_DEFAULT_RESOLUTION[range]
+
+  if (!VALID_RESOLUTIONS.includes(requestedResolution as AnnResolution)) {
+    return res.status(400).json({ message: 'resolution must be one of raw, 5m, 1h, 1d' })
   }
 
-  const readings = await prisma.annReading.findMany({
-    where: since ? { createdAt: { gte: since } } : undefined,
-    orderBy: { createdAt: 'desc' },
-    take: limit,
+  const resolution = requestedResolution as AnnResolution
+  const page = parsePositiveInteger(req.query.page, 1)
+  const requestedPageSize = req.query.pageSize ?? req.query.limit ?? 200
+  const pageSize = Math.min(parsePositiveInteger(requestedPageSize, 200), 500)
+  const includeTrend = parseBoolean(req.query.includeTrend, true)
+
+  const filters = parseAnnHistoryFilters(req.query as Record<string, unknown>)
+  const startAt = new Date(Date.now() - ANN_RANGE_TO_MS[range])
+
+  const records = await prisma.annPredictionRun.findMany({
+    where: {
+      // Windowing on ingestion time keeps the dashboard realtime for delayed/static device clocks.
+      createdAt: {
+        gte: startAt,
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+    select: ANN_RUN_SUMMARY_SELECT,
   })
 
-  return res.json(readings)
+  return res.json(
+    buildAnnHistoryResponse({
+      records,
+      range,
+      resolution,
+      page,
+      pageSize,
+      includeTrend,
+      filters,
+    }),
+  )
+})
+
+router.get('/:id', async (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id) || id < 1) {
+    return res.status(400).json({ message: 'id must be a positive integer' })
+  }
+
+  const record = await prisma.annPredictionRun.findUnique({
+    where: { id },
+    select: ANN_RUN_DETAIL_SELECT,
+  })
+
+  if (!record) {
+    return res.status(404).json({ message: 'ANN prediction run not found' })
+  }
+
+  return res.json(toAnnRunDetail(record))
 })
 
 export default router

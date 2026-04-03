@@ -16,6 +16,15 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    host: true,
+    port: 5173,
+    strictPort: true,
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost',
+      port: 5173,
+      clientPort: 5173,
+    },
     // Proxy /api calls to the Express server during development
     proxy: {
       '/api': 'http://localhost:4000',

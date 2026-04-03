@@ -126,6 +126,7 @@ export interface NotificationRecord {
 }
 
 export interface HistoryRow {
+  id?: string | number
   timestamp: string
   panel: PanelKey
   voltage: number
@@ -135,6 +136,20 @@ export interface HistoryRow {
   azimuth?: number
   elevation?: number
   forecast?: string
+}
+
+export interface PaginationInfo {
+  page: number
+  pageSize: number
+  totalCount: number
+  totalPages: number
+  hasPrev: boolean
+  hasNext: boolean
+}
+
+export interface PaginatedResponse<T> {
+  items: T[]
+  pagination: PaginationInfo
 }
 
 export interface ComparisonSummary {

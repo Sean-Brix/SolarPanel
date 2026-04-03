@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import type { HistoryRow } from '@/shared/types/solar'
 import { ScrollArea } from '@/shared/ui/scroll-area'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/ui/card'
@@ -7,35 +7,44 @@ type HistoricalLogTableProps = {
   rows: HistoryRow[]
   title?: string
   description?: string
+  page: number
+  pageSize: number
+  totalPages: number
+  totalCount: number
+  hasPrev: boolean
+  hasNext: boolean
+  onPageChange: (page: number) => void
+  onPageSizeChange: (pageSize: number) => void
+  loading?: boolean
 }
 
 export function HistoricalLogTable({
   rows,
   title = 'Historical Logs',
   description = 'Recorded values prepared for later backend persistence.',
+  page,
+  pageSize,
+  totalPages,
+  totalCount,
+  hasPrev,
+  hasNext,
+  onPageChange,
+  onPageSizeChange,
+  loading = false,
 }: HistoricalLogTableProps) {
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
+
+  const getRowKey = (row: HistoryRow, index: number) =>
+    row.id !== undefined ? String(row.id) : `${row.panel}-${row.timestamp}-${index}`
 
   const hasPositionColumn = rows.some(
     (row) => row.azimuth !== undefined && row.elevation !== undefined,
   )
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
-
-  useEffect(() => {
-    setPage(1)
-    setExpandedRowId(null)
-  }, [rows, pageSize])
-
-  const visibleRows = useMemo(() => {
-    const start = (page - 1) * pageSize
-    return rows.slice(start, start + pageSize)
-  }, [page, pageSize, rows])
-
-  const firstRowIndex = rows.length === 0 ? 0 : (page - 1) * pageSize + 1
-  const lastRowIndex = Math.min(page * pageSize, rows.length)
+  const safeTotalPages = Math.max(totalPages, 1)
+  const safePage = Math.min(Math.max(page, 1), safeTotalPages)
+  const firstRowIndex = totalCount === 0 ? 0 : (safePage - 1) * pageSize + 1
+  const lastRowIndex = Math.min(safePage * pageSize, totalCount)
 
   const toggleRow = (id: string) => {
     setExpandedRowId((current) => (current === id ? null : id))
@@ -50,7 +59,7 @@ export function HistoricalLogTable({
       <CardContent>
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <p className="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-            Showing {firstRowIndex}-{lastRowIndex} of {rows.length}
+            Showing {firstRowIndex}-{lastRowIndex} of {totalCount}
           </p>
 
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
@@ -58,7 +67,7 @@ export function HistoricalLogTable({
               <span>Rows</span>
               <select
                 value={pageSize}
-                onChange={(event) => setPageSize(Number(event.target.value))}
+                onChange={(event) => onPageSizeChange(Number(event.target.value))}
                 className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
               >
                 <option value={10}>10</option>
@@ -69,19 +78,19 @@ export function HistoricalLogTable({
 
             <button
               type="button"
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-              disabled={page === 1}
+              onClick={() => onPageChange(Math.max(1, safePage - 1))}
+              disabled={!hasPrev}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               Prev
             </button>
             <span className="text-xs text-slate-600 sm:text-sm dark:text-slate-300">
-              Page {page} / {totalPages}
+              Page {safePage} / {safeTotalPages}
             </span>
             <button
               type="button"
-              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-              disabled={page === totalPages}
+              onClick={() => onPageChange(Math.min(safeTotalPages, safePage + 1))}
+              disabled={!hasNext}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               Next
@@ -89,9 +98,13 @@ export function HistoricalLogTable({
           </div>
         </div>
 
+        {loading ? (
+          <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">Loading page...</p>
+        ) : null}
+
         <div className="space-y-2 md:hidden">
-          {visibleRows.map((row) => {
-            const rowId = `${row.timestamp}-${row.power}`
+          {rows.map((row, index) => {
+            const rowId = getRowKey(row, index)
             const isExpanded = expandedRowId === rowId
 
             return (
@@ -152,9 +165,9 @@ export function HistoricalLogTable({
                 </tr>
               </thead>
               <tbody>
-                {visibleRows.map((row) => (
+                {rows.map((row, index) => (
                   <tr
-                    key={`${row.timestamp}-${row.power}`}
+                    key={getRowKey(row, index)}
                     className="rounded-2xl bg-slate-100/80 text-sm text-slate-700 dark:bg-white/[0.03] dark:text-slate-300"
                   >
                     <td className="rounded-l-2xl border-y border-l border-slate-200/90 px-4 py-2.5 sm:py-3 dark:border-white/8">

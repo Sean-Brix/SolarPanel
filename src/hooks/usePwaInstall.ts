@@ -22,8 +22,10 @@ export function usePwaInstall() {
 
   useEffect(() => {
     function handleBeforeInstallPrompt(event: Event) {
-      event.preventDefault()
-      setDeferredPrompt(event as BeforeInstallPromptEvent)
+      const installEvent = event as BeforeInstallPromptEvent
+      if (typeof installEvent.prompt === 'function') {
+        setDeferredPrompt(installEvent)
+      }
     }
 
     function handleInstalled() {

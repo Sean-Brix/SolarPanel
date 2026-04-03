@@ -5,7 +5,6 @@ import { HistoricalLogTable } from '@/features/solar-monitoring/components/Histo
 import { MetricCard } from '@/features/solar-monitoring/components/MetricCard'
 import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
 import { TimelineCard } from '@/features/solar-monitoring/components/TimelineCard'
-import { TrackerPositionCard } from '@/features/solar-monitoring/components/TrackerPositionCard'
 import { usePanelTrackerData } from '@/features/solar-monitoring/hooks/usePanelTrackerData'
 import { panels } from '@/features/solar-monitoring/data/mock-data'
 import type { TimeRange } from '@/shared/types/solar'
@@ -43,14 +42,11 @@ export function ConventionalPanelPage() {
         <MetricCard icon={Orbit} label="Efficiency" value={telemetry.efficiency} note="Computed from DB tracker logs" format="percent" />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-        {telemetry.tracker ? <TrackerPositionCard tracker={telemetry.tracker} /> : null}
-        <TimelineCard
-          title="Movement Timeline"
-          description="Tracking events and movement cost."
-          items={panel.timeline}
-        />
-      </div>
+      <TimelineCard
+        title="Movement Timeline"
+        description="Tracking events and movement cost."
+        items={panel.timeline}
+      />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard
@@ -97,6 +93,15 @@ export function ConventionalPanelPage() {
         rows={telemetry.historyRows}
         title="Conventional Tracker Log"
         description="Live snapshots with tracker position and output from database telemetry."
+        page={telemetry.pagination.page}
+        pageSize={telemetry.pagination.pageSize}
+        totalPages={telemetry.pagination.totalPages}
+        totalCount={telemetry.pagination.totalCount}
+        hasPrev={telemetry.pagination.hasPrev}
+        hasNext={telemetry.pagination.hasNext}
+        onPageChange={telemetry.setPage}
+        onPageSizeChange={telemetry.setPageSize}
+        loading={telemetry.loading}
       />
     </div>
   )
