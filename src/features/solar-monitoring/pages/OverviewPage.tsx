@@ -5,6 +5,7 @@ import { ChartCard } from '@/features/solar-monitoring/components/ChartCard'
 import { HistoricalLogTable } from '@/features/solar-monitoring/components/HistoricalLogTable'
 import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
 import { fetchJsonCached } from '@/shared/lib/apiCache'
+import { buildDaySheets, exportWorkbookByDay } from '@/shared/lib/excelExport'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
 import type { AnnRunDetail } from '@/shared/types/ann'
@@ -76,6 +77,73 @@ const RANGE_CONFIG: Record<OverviewRange, { label: string; sinceMs?: number; pag
 }
 
 const OVERVIEW_HISTORY_CACHE_MS = 30 * 1000
+const EXPORT_PAGE_SIZE = 500
+
+async function fetchAllOverviewPanelReadings(
+  panel: ComparisonPanelKey,
+  since?: Date,
+): Promise<NormalizedReading[]> {
+  const allReadings: NormalizedReading[] = []
+  let page = 1
+
+  while (true) {
+    const query = new URLSearchParams({
+      page: String(page),
+      pageSize: String(EXPORT_PAGE_SIZE),
+    })
+
+    if (since) {
+      query.set('since', since.toISOString())
+    }
+
+    const response = await fetchJsonCached<PaginatedResponse<BackendReading>>(
+      `/api/${panel}/history?${query.toString()}`,
+      {
+        ttlMs: OVERVIEW_HISTORY_CACHE_MS,
+        force: true,
+      },
+    )
+
+    if (!response.ok) {
+      throw new Error(`Failed to load ${panel} export data (${response.status})`)
+    }
+
+    const mapped = response.body.items.map((item) => {
+      const timestampValue = item.timestamp ?? item.createdAt
+      const timestamp = timestampValue ? new Date(timestampValue) : new Date()
+      const voltage = Number(item.voltage ?? 0)
+      const current = Number(item.current ?? 0)
+      const power = Number(item.power ?? voltage * current)
+      const irradiance = Number(item.irradiance ?? 0)
+      const temperature = Number(item.temperature ?? 0)
+      const derivedId = item.id ?? `${panel}-${timestamp.getTime()}-${Math.round(power * 1000)}`
+
+      return {
+        id: String(derivedId),
+        timestamp,
+        panelType: panel,
+        voltage,
+        current,
+        power,
+        irradiance,
+        temperature,
+        humidity: Number(item.humidity ?? 0),
+        azimuthAngle: item.azimuth_angle ?? item.axisY,
+        elevationAngle: item.elevation_angle ?? item.axisX,
+      } satisfies NormalizedReading
+    })
+
+    allReadings.push(...mapped)
+
+    if (!response.body.pagination.hasNext) {
+      break
+    }
+
+    page += 1
+  }
+
+  return allReadings.sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime())
+}
 
 function emptyPagination(pageSize: number): PaginationInfo {
   return {
@@ -253,6 +321,8 @@ export function OverviewPage() {
     conventional: emptyPagination(RANGE_CONFIG.all.pageSize),
   })
   const [annLatest, setAnnLatest] = useState<AnnRunDetail | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
 
   useEffect(() => {
     const defaultPageSize = RANGE_CONFIG[range].pageSize
@@ -583,44 +653,75 @@ export function OverviewPage() {
   }, [metrics])
 
   async function handleExportExcel() {
-    const xlsx = await import('xlsx')
-    const fixedLogs = toHistoryRows(readingsByPanel.fixed)
-    const conventionalLogs = toHistoryRows(readingsByPanel.conventional)
+    setIsExporting(true)
+    setExportError(null)
 
-    const summaryRows = [
-      { Metric: 'Range', Value: RANGE_CONFIG[range].label },
-      { Metric: 'Total Generated (kWh)', Value: totalGeneratedKwh.toFixed(3) },
-      ...metrics.list.map((item) => ({
-        Metric: `${PANEL_LABEL[item.panel]} Generated (kWh)`,
-        Value: (item.totalEnergyWh / 1000).toFixed(3),
-      })),
-    ]
+    try {
+      const config = RANGE_CONFIG[range]
+      const since = config.sinceMs ? new Date(Date.now() - config.sinceMs) : undefined
+      const [fixedRows, conventionalRows] = await Promise.all([
+        fetchAllOverviewPanelReadings('fixed', since),
+        fetchAllOverviewPanelReadings('conventional', since),
+      ])
 
-    const comparisonRows = metrics.list.map((item) => ({
-      Panel: PANEL_LABEL[item.panel],
-      'Avg Power (W)': item.averagePower.toFixed(2),
-      'Max Power (W)': item.maximumPower.toFixed(2),
-      'Avg Energy (Wh)': item.averageEnergyWh.toFixed(4),
-      'Max Energy (Wh)': item.maximumEnergyWh.toFixed(4),
-      'Total Energy (Wh)': item.totalEnergyWh.toFixed(2),
-      'Efficiency (%)': item.efficiencyPct.toFixed(2),
-      'Avg Irradiance (W/m2)': item.averageIrradiance.toFixed(2),
-      'Avg Temp (C)': item.averageTemperature.toFixed(2),
-      'Tracker Movement (deg)': item.panel === 'fixed' ? 'N/A' : item.trackerMovementDeg.toFixed(2),
-    }))
+      const combinedSource = [...fixedRows, ...conventionalRows].sort(
+        (left, right) => left.timestamp.getTime() - right.timestamp.getTime(),
+      )
 
-    const workbook = xlsx.utils.book_new()
-    const summarySheet = xlsx.utils.json_to_sheet(summaryRows)
-    const comparisonSheet = xlsx.utils.json_to_sheet(comparisonRows)
-    const fixedLogSheet = xlsx.utils.json_to_sheet(fixedLogs)
-    const conventionalLogSheet = xlsx.utils.json_to_sheet(conventionalLogs)
+      const combinedRows = combinedSource.map((row, index, source) => {
+        const previous = index > 0 ? source[index - 1] : null
+        const deltaHours = previous
+          ? Math.max((row.timestamp.getTime() - previous.timestamp.getTime()) / 3_600_000, 0)
+          : 1 / 60
 
-    xlsx.utils.book_append_sheet(workbook, summarySheet, 'Summary')
-    xlsx.utils.book_append_sheet(workbook, comparisonSheet, 'Comparison')
-    xlsx.utils.book_append_sheet(workbook, fixedLogSheet, 'Fixed Logs')
-    xlsx.utils.book_append_sheet(workbook, conventionalLogSheet, 'Conventional Logs')
+        return {
+          timestampIso: row.timestamp.toISOString(),
+          Timestamp: row.timestamp.toLocaleString('en-US'),
+          Panel: PANEL_LABEL[row.panelType],
+          Voltage_V: Number(row.voltage.toFixed(3)),
+          Current_A: Number(row.current.toFixed(3)),
+          Power_W: Number(row.power.toFixed(3)),
+          IntervalEnergy_Wh: Number((row.power * deltaHours).toFixed(4)),
+          Irradiance_Wm2: Number(row.irradiance.toFixed(2)),
+          Temperature_C: Number(row.temperature.toFixed(2)),
+          Azimuth_deg: row.azimuthAngle !== undefined ? Number(row.azimuthAngle.toFixed(2)) : null,
+          Elevation_deg: row.elevationAngle !== undefined ? Number(row.elevationAngle.toFixed(2)) : null,
+        }
+      })
 
-    xlsx.writeFile(workbook, `overview-${range}-report.xlsx`)
+      const daySheets = buildDaySheets(combinedRows, (row) => new Date(row.timestampIso)).map((sheet) => ({
+        ...sheet,
+        rows: sheet.rows.map(({ timestampIso: _timestampIso, ...row }) => row),
+      }))
+
+      const overviewRows = [
+        { Metric: 'Range', Value: RANGE_CONFIG[range].label },
+        { Metric: 'Total Generated (kWh)', Value: totalGeneratedKwh.toFixed(3) },
+        ...metrics.list.map((item) => ({
+          Metric: `${PANEL_LABEL[item.panel]} Generated (kWh)`,
+          Value: (item.totalEnergyWh / 1000).toFixed(3),
+        })),
+        { Metric: 'Top Energy Panel', Value: PANEL_LABEL[topEnergy.panel] },
+        { Metric: 'Top Efficiency Panel', Value: PANEL_LABEL[topEfficiency.panel] },
+        { Metric: 'Conventional Gain (%)', Value: conventionalGain.toFixed(2) },
+        { Metric: 'ANN Overall', Value: annLatest?.overallResult ?? 'N/A' },
+        {
+          Metric: 'ANN Weather Match',
+          Value: annLatest ? `${annLatest.weatherCheck.matchCount}/${annLatest.weatherCheck.total}` : 'N/A',
+        },
+        { Metric: 'Exported rows', Value: combinedRows.length },
+      ]
+
+      await exportWorkbookByDay({
+        fileName: `overview-${range}-report.xlsx`,
+        overviewRows,
+        daySheets,
+      })
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Failed to export overview workbook')
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   async function handleExportPdf() {
@@ -764,13 +865,18 @@ export function OverviewPage() {
                 onClick={() => {
                   void handleExportExcel()
                 }}
-                className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-100 sm:w-auto sm:text-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                disabled={isExporting}
+                className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:text-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
                 <Download className="h-4 w-4" />
-                Export Excel
+                {isExporting ? 'Exporting...' : 'Export Excel'}
               </button>
             </div>
           </div>
+
+          {exportError ? (
+            <p className="text-sm text-rose-700 dark:text-rose-300">{exportError}</p>
+          ) : null}
 
           <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]">
             <div className="rounded-2xl border border-slate-200 bg-slate-100/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">

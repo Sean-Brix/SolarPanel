@@ -1,5 +1,5 @@
 import { useDeferredValue, useMemo, useState } from 'react'
-import { BrainCircuit, CheckCircle2, Clock3, Waves } from 'lucide-react'
+import { BrainCircuit, CheckCircle2, Clock3, Download, Waves } from 'lucide-react'
 import { ChartCard } from '@/features/solar-monitoring/components/ChartCard'
 import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
 import {
@@ -7,8 +7,10 @@ import {
   type AnnDashboardFilters,
 } from '@/features/solar-monitoring/hooks/useAnnDashboardData'
 import { cn } from '@/shared/lib/cn'
+import { fetchJsonCached } from '@/shared/lib/apiCache'
+import { buildDaySheets, exportWorkbookByDay } from '@/shared/lib/excelExport'
 import { formatDateTime, formatNumber } from '@/shared/lib/formatters'
-import type { AnnFieldResult, AnnRange, AnnRunSummary } from '@/shared/types/ann'
+import type { AnnFieldResult, AnnHistoryResponse, AnnRange, AnnResolution, AnnRunSummary } from '@/shared/types/ann'
 import { Badge } from '@/shared/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/ui/card'
 import { ScrollArea } from '@/shared/ui/scroll-area'
@@ -29,6 +31,169 @@ const ANN_VIEW_OPTIONS: Array<{ value: AnnView; label: string }> = [
   { value: 'history', label: 'Run history' },
   { value: 'detail', label: 'Selected run detail' },
 ]
+
+type AnnPayloadExportRow = {
+  timestampIso: string
+  Timestamp: string
+  RunId: number
+  Payload?: string
+  [key: string]: string | number | boolean | null | undefined
+}
+
+type AnnPayloadEntry = {
+  key: string
+  value: string
+}
+
+type AnnPayloadGroup = {
+  name: string
+  entries: AnnPayloadEntry[]
+}
+
+function formatPrimitive(value: unknown) {
+  if (value === null) return 'null'
+  if (value === undefined) return 'undefined'
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (value instanceof Date) return value.toISOString()
+  return String(value)
+}
+
+function flattenAnnPayload(
+  value: unknown,
+  path = '',
+  output: Record<string, string> = {},
+): Record<string, string> {
+  if (Array.isArray(value)) {
+    if (!value.length) {
+      output[path || 'value'] = '[]'
+      return output
+    }
+
+    value.forEach((item, index) => {
+      const nextPath = path ? `${path}[${index}]` : `[${index}]`
+      flattenAnnPayload(item, nextPath, output)
+    })
+
+    return output
+  }
+
+  if (value && typeof value === 'object') {
+    const input = value as Record<string, unknown>
+    const keys = Object.keys(input).sort((left, right) => left.localeCompare(right))
+
+    if (!keys.length) {
+      output[path || 'value'] = '{}'
+      return output
+    }
+
+    for (const key of keys) {
+      const nextPath = path ? `${path}.${key}` : key
+      flattenAnnPayload(input[key], nextPath, output)
+    }
+
+    return output
+  }
+
+  output[path || 'value'] = formatPrimitive(value)
+  return output
+}
+
+function buildAnnPayloadColumns(run: AnnRunSummary) {
+  const flat = flattenAnnPayload(run)
+  const entries = Object.entries(flat).sort(([left], [right]) => left.localeCompare(right))
+
+  return Object.fromEntries(entries)
+}
+
+function groupAnnPayloadEntries(run: AnnRunSummary): AnnPayloadGroup[] {
+  const flat = flattenAnnPayload(run)
+  const groups = new Map<string, AnnPayloadEntry[]>()
+
+  for (const [key, value] of Object.entries(flat).sort(([left], [right]) => left.localeCompare(right))) {
+    const groupName = key.includes('.') ? key.slice(0, key.indexOf('.')) : 'root'
+    const groupEntries = groups.get(groupName) ?? []
+    groupEntries.push({ key, value })
+    groups.set(groupName, groupEntries)
+  }
+
+  return [...groups.entries()].map(([name, entries]) => ({ name, entries }))
+}
+
+const ANN_EXPORT_PAGE_SIZE = 500
+
+const ANN_DEFAULT_RESOLUTION: Record<AnnRange, AnnResolution> = {
+  '1h': 'raw',
+  '24h': '5m',
+  '7d': '1h',
+  '30d': '1d',
+}
+
+function buildAnnExportHistoryQuery(
+  range: AnnRange,
+  resolution: AnnResolution,
+  page: number,
+  pageSize: number,
+  filters: AnnDashboardFilters,
+) {
+  const params = new URLSearchParams({
+    range,
+    resolution,
+    page: String(page),
+    pageSize: String(pageSize),
+    includeTrend: 'false',
+  })
+
+  if (filters.overallResult !== 'all') {
+    params.set('overallResult', filters.overallResult)
+  }
+
+  if (filters.sensorResult !== 'all') {
+    params.set('sensorResult', filters.sensorResult)
+  }
+
+  if (filters.weatherMismatch !== 'all') {
+    params.set('weatherMismatch', filters.weatherMismatch)
+  }
+
+  if (filters.fieldGroup !== 'all') {
+    params.set('fieldGroup', filters.fieldGroup)
+  }
+
+  if (filters.relayApplied !== 'all') {
+    params.set('relayApplied', filters.relayApplied)
+  }
+
+  return params.toString()
+}
+
+async function fetchAllAnnRuns(range: AnnRange, filters: AnnDashboardFilters) {
+  const resolution = ANN_DEFAULT_RESOLUTION[range]
+  const runs: AnnRunSummary[] = []
+  let page = 1
+
+  while (true) {
+    const query = buildAnnExportHistoryQuery(range, resolution, page, ANN_EXPORT_PAGE_SIZE, filters)
+    const response = await fetchJsonCached<AnnHistoryResponse>(`/api/ann/history?${query}`, {
+      ttlMs: 30_000,
+      force: true,
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to load ANN export data (${response.status})`)
+    }
+
+    runs.push(...response.body.runs)
+
+    if (!response.body.meta.hasNext) {
+      break
+    }
+
+    page += 1
+  }
+
+  return runs
+}
 
 function statusVariant(value: string) {
   const normalized = value.toUpperCase()
@@ -149,7 +314,7 @@ function AnnHistoryTable({
       <CardHeader>
         <CardTitle>Run History</CardTitle>
         <CardDescription>
-          Server-paginated ANN run summaries. Select a run to open detail view.
+          Server-paginated ANN run summaries. Click a row to open exact record payload.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -254,6 +419,9 @@ function AnnHistoryTable({
 
 export function AnnPanelPage() {
   const [view, setView] = useState<AnnView>('accuracy')
+  const [isExporting, setIsExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const [isPayloadModalOpen, setIsPayloadModalOpen] = useState(false)
   const includeTrend = view === 'accuracy' || view === 'weather' || view === 'field'
 
   const {
@@ -354,7 +522,63 @@ export function AnnPanelPage() {
 
   const openRun = (runId: number) => {
     setSelectedRunId(runId)
-    setView('detail')
+    setIsPayloadModalOpen(true)
+  }
+
+  const closePayloadModal = () => {
+    setIsPayloadModalOpen(false)
+  }
+
+  const handleExportExcel = async () => {
+    setIsExporting(true)
+    setExportError(null)
+
+    try {
+      const runsForExport = await fetchAllAnnRuns(range, filters)
+      const rows: AnnPayloadExportRow[] = runsForExport.map((run) => ({
+        timestampIso: run.createdAt,
+        Timestamp: new Date(run.createdAt).toLocaleString('en-US'),
+        RunId: run.id,
+        ...buildAnnPayloadColumns(run),
+      }))
+
+      const daySheets = buildDaySheets(rows, (row) => new Date(row.timestampIso)).map((sheet) => ({
+        ...sheet,
+        rows: sheet.rows.map(({ timestampIso: _timestampIso, ...row }) => row),
+      }))
+
+      const activeFilterSummary = [
+        `overall=${filters.overallResult}`,
+        `sensor=${filters.sensorResult}`,
+        `weatherMismatch=${filters.weatherMismatch}`,
+        `fieldGroup=${filters.fieldGroup}`,
+        `relayApplied=${filters.relayApplied}`,
+      ].join(', ')
+
+      const overviewRows = [
+        { Metric: 'Panel', Value: 'ANN' },
+        { Metric: 'Range', Value: ANN_RANGE_LABELS[range] },
+        { Metric: 'Overall status', Value: latestRun?.overallResult ?? 'WAITING' },
+        { Metric: 'Sensor status', Value: latestRun?.sensorResult ?? 'WAITING' },
+        {
+          Metric: 'Weather match',
+          Value: latestRun ? `${latestRun.weatherCheck.matchCount}/${latestRun.weatherCheck.total}` : 'N/A',
+        },
+        { Metric: 'Last update', Value: latestRun ? formatDateTime(new Date(latestRun.createdAt)) : 'N/A' },
+        { Metric: 'Active filters', Value: activeFilterSummary },
+        { Metric: 'Exported rows', Value: rows.length },
+      ]
+
+      await exportWorkbookByDay({
+        fileName: `ann-panel-${range}-${new Date().toISOString().slice(0, 10)}.xlsx`,
+        overviewRows,
+        daySheets,
+      })
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Failed to export ANN workbook')
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   return (
@@ -367,6 +591,28 @@ export function AnnPanelPage() {
         status={latestRun ? (latestRun.overallResult === 'CORRECT' ? 'normal' : 'warning') : 'warning'}
         lastUpdated={latestRun ? new Date(latestRun.createdAt) : new Date()}
       />
+
+      <div className="flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => {
+            void handleExportExcel()
+          }}
+          disabled={isExporting}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          <Download className="h-4 w-4" />
+          {isExporting ? 'Exporting...' : 'Export Excel'}
+        </button>
+      </div>
+
+      {exportError ? (
+        <Card>
+          <CardContent className="pt-4 sm:pt-5">
+            <p className="text-sm text-rose-700 dark:text-rose-200">{exportError}</p>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryTile
@@ -663,6 +909,62 @@ export function AnnPanelPage() {
             <p className="text-sm text-slate-600 dark:text-slate-300">Refreshing ANN data...</p>
           </CardContent>
         </Card>
+      ) : null}
+
+      {isPayloadModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 px-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-950">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-white/10">
+              <div>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">ANN Record Payload</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {detailRun ? `Run ID ${detailRun.id} • ${formatDateTime(new Date(detailRun.createdAt))}` : 'Loading selected record...'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closePayloadModal}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 dark:border-white/10 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="max-h-[75vh] overflow-auto p-4">
+              {detailLoading ? (
+                <p className="text-sm text-slate-600 dark:text-slate-300">Loading payload...</p>
+              ) : null}
+
+              {detailRun ? (
+                <div className="space-y-4">
+                  {groupAnnPayloadEntries(detailRun).map((group) => (
+                    <div key={group.name} className="rounded-xl border border-slate-200 dark:border-white/10">
+                      <div className="border-b border-slate-200 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:border-white/10 dark:text-slate-400">
+                        {group.name}
+                      </div>
+                      <div className="divide-y divide-slate-200 dark:divide-white/10">
+                        {group.entries.map((entry) => (
+                          <div key={entry.key} className="grid gap-2 px-4 py-3 sm:grid-cols-[260px_minmax(0,1fr)]">
+                            <div className="break-words text-sm font-medium text-slate-900 dark:text-white">
+                              {entry.key}
+                            </div>
+                            <div className="break-words font-mono text-xs leading-5 text-slate-700 dark:text-slate-300">
+                              {entry.value}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {!detailLoading && !detailRun ? (
+                <p className="text-sm text-slate-600 dark:text-slate-300">No payload available for this record.</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   )
