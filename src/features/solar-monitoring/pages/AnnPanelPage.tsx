@@ -5,6 +5,7 @@ import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
 import {
   useAnnDashboardData,
   type AnnDashboardFilters,
+  type AnnDashboardTimeFilter,
 } from '@/features/solar-monitoring/hooks/useAnnDashboardData'
 import { cn } from '@/shared/lib/cn'
 import { fetchJsonCached } from '@/shared/lib/apiCache'
@@ -12,6 +13,7 @@ import { buildDaySheets, exportWorkbookByDay } from '@/shared/lib/excelExport'
 import { formatDateTime, formatNumber } from '@/shared/lib/formatters'
 import type {
   AnnFieldResult,
+  AnnFieldSummary,
   AnnHistoryResponse,
   AnnRange,
   AnnResolution,
@@ -35,8 +37,8 @@ const ANN_VIEW_OPTIONS: Array<{ value: AnnView; label: string }> = [
   { value: 'accuracy', label: 'Accuracy over time' },
   { value: 'weather', label: 'Weather checks over time' },
   { value: 'field', label: 'Field compare over time' },
-  { value: 'history', label: 'Run history' },
-  { value: 'detail', label: 'Selected run detail' },
+  { value: 'history', label: 'Sample history' },
+  { value: 'detail', label: 'Selected sample detail' },
 ]
 
 type AnnPayloadExportRow = {
@@ -118,6 +120,7 @@ function buildAnnExportHistoryQuery(
   page: number,
   pageSize: number,
   filters: AnnDashboardFilters,
+  timeFilter: AnnDashboardTimeFilter,
 ) {
   const params = new URLSearchParams({
     range,
@@ -147,16 +150,40 @@ function buildAnnExportHistoryQuery(
     params.set('relayApplied', filters.relayApplied)
   }
 
+  if (timeFilter.enabled) {
+    const startAt = timeFilter.startAtLocal ? new Date(timeFilter.startAtLocal) : null
+    const endAt = timeFilter.endAtLocal ? new Date(timeFilter.endAtLocal) : null
+
+    if (startAt && !Number.isNaN(startAt.getTime())) {
+      params.set('startAt', startAt.toISOString())
+    }
+
+    if (endAt && !Number.isNaN(endAt.getTime())) {
+      params.set('endAt', endAt.toISOString())
+    }
+  }
+
   return params.toString()
 }
 
-async function fetchAllAnnRuns(range: AnnRange, filters: AnnDashboardFilters) {
+async function fetchAllAnnRuns(
+  range: AnnRange,
+  filters: AnnDashboardFilters,
+  timeFilter: AnnDashboardTimeFilter,
+) {
   const resolution = ANN_DEFAULT_RESOLUTION[range]
   const runs: AnnRunSummary[] = []
   let page = 1
 
   while (true) {
-    const query = buildAnnExportHistoryQuery(range, resolution, page, ANN_EXPORT_PAGE_SIZE, filters)
+    const query = buildAnnExportHistoryQuery(
+      range,
+      resolution,
+      page,
+      ANN_EXPORT_PAGE_SIZE,
+      filters,
+      timeFilter,
+    )
     const response = await fetchJsonCached<AnnHistoryResponse>(`/api/ann/history?${query}`, {
       ttlMs: 30_000,
       force: true,
@@ -270,20 +297,62 @@ const ANN_SAMPLE_FIELDS: Array<{ label: string; read: (sample: AnnSample) => str
   { label: 'RELAY4', read: (sample) => formatRelaySampleValue(sample.relay4) },
 ]
 
-function SampleReportTable({ sample }: { sample: AnnSample }) {
+type ReportRow = {
+  label: string
+  value: string
+}
+
+function ResponsiveReportRows({
+  rows,
+  desktopLabelWidthClass = 'sm:w-[220px]',
+}: {
+  rows: ReportRow[]
+  desktopLabelWidthClass?: string
+}) {
   return (
-    <table className="w-full text-left text-xs sm:text-sm">
-      <tbody>
-        {ANN_SAMPLE_FIELDS.map((field) => (
-          <tr key={field.label} className="border-b border-slate-200/80 dark:border-white/10">
-            <th className="w-[180px] px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100 sm:w-[220px]">
-              {field.label}
-            </th>
-            <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {field.read(sample)}</td>
-          </tr>
+    <>
+      <div className="divide-y divide-slate-200/80 dark:divide-white/10 sm:hidden">
+        {rows.map((row) => (
+          <div key={row.label} className="px-3 py-2">
+            <p className="text-[11px] font-semibold tracking-[0.06em] text-slate-800 dark:text-slate-100">
+              {row.label}
+            </p>
+            <p className="mt-1 break-words text-xs text-slate-700 dark:text-slate-300">: {row.value}</p>
+          </div>
         ))}
-      </tbody>
-    </table>
+      </div>
+
+      <table className="hidden w-full text-left text-sm sm:table">
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label} className="border-b border-slate-200/80 dark:border-white/10">
+              <th
+                className={cn(
+                  'px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100',
+                  desktopLabelWidthClass,
+                )}
+              >
+                {row.label}
+              </th>
+              <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {row.value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  )
+}
+
+function SampleReportTable({ sample }: { sample: AnnSample }) {
+  const rows: ReportRow[] = ANN_SAMPLE_FIELDS.map((field) => ({
+    label: field.label,
+    value: field.read(sample),
+  }))
+
+  return (
+    <div className="text-xs sm:text-sm">
+      <ResponsiveReportRows rows={rows} desktopLabelWidthClass="sm:w-[220px]" />
+    </div>
   )
 }
 
@@ -302,35 +371,19 @@ function WeatherReportTable({
   temperatureC: number
   humidity: number
 }) {
+  const rows: ReportRow[] = [
+    { label: 'TIMESTAMP', value: timestamp },
+    { label: 'HOUR', value: formatNumber(hour, 0) },
+    { label: 'WEATHER CODE', value: formatNumber(weatherCode, 0) },
+    { label: 'WEATHER', value: weather },
+    { label: 'TEMP C', value: formatNumber(temperatureC, 1) },
+    { label: 'HUMIDITY %', value: formatNumber(humidity, 0) },
+  ]
+
   return (
-    <table className="w-full text-left text-xs sm:text-sm">
-      <tbody>
-        <tr className="border-b border-slate-200/80 dark:border-white/10">
-          <th className="w-[180px] px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100 sm:w-[220px]">TIMESTAMP</th>
-          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {timestamp}</td>
-        </tr>
-        <tr className="border-b border-slate-200/80 dark:border-white/10">
-          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">HOUR</th>
-          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatNumber(hour, 0)}</td>
-        </tr>
-        <tr className="border-b border-slate-200/80 dark:border-white/10">
-          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">WEATHER CODE</th>
-          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatNumber(weatherCode, 0)}</td>
-        </tr>
-        <tr className="border-b border-slate-200/80 dark:border-white/10">
-          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">WEATHER</th>
-          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {weather}</td>
-        </tr>
-        <tr className="border-b border-slate-200/80 dark:border-white/10">
-          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">TEMP C</th>
-          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatNumber(temperatureC, 1)}</td>
-        </tr>
-        <tr>
-          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">HUMIDITY %</th>
-          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatNumber(humidity, 0)}</td>
-        </tr>
-      </tbody>
-    </table>
+    <div className="text-xs sm:text-sm">
+      <ResponsiveReportRows rows={rows} desktopLabelWidthClass="sm:w-[220px]" />
+    </div>
   )
 }
 
@@ -410,9 +463,9 @@ function AnnHistoryTable({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Run History</CardTitle>
+        <CardTitle>Sample History</CardTitle>
         <CardDescription>
-          Server-paginated ANN run summaries. Click a row to open exact record payload.
+          Server-paginated ANN sample records. Click a row to open exact record payload.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -515,6 +568,98 @@ function AnnHistoryTable({
   )
 }
 
+function AllRecordsFieldSummaryCard({
+  fields,
+  totalSamples,
+  loading,
+}: {
+  fields: AnnFieldSummary[]
+  totalSamples: number
+  loading: boolean
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Field-by-Field Check (All Records)</CardTitle>
+        <CardDescription>
+          Computed from all ANN records in the active filter window, not only the current table page.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+          {loading ? 'Calculating...' : `Total samples used: ${totalSamples}`}
+        </p>
+
+        {!loading && fields.length === 0 ? (
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            No ANN records found for the current time/filter selection.
+          </p>
+        ) : null}
+
+        <div className="space-y-2 sm:hidden">
+          {fields.map((field) => (
+            <div key={field.name} className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">{field.name}</p>
+                <Badge variant={field.passRatePct >= 80 ? 'success' : field.passRatePct >= 60 ? 'warning' : 'danger'}>
+                  {formatNumber(field.passRatePct, 1)}%
+                </Badge>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-700 dark:text-slate-300">
+                <p className="text-slate-500 dark:text-slate-400">OK / NO</p>
+                <p>{field.okCount} / {field.mismatchCount}</p>
+                <p className="text-slate-500 dark:text-slate-400">Avg Pred</p>
+                <p>{formatNumber(field.predictedAvg, 2)}</p>
+                <p className="text-slate-500 dark:text-slate-400">Avg Actual</p>
+                <p>{formatNumber(field.actualAvg, 2)}</p>
+                <p className="text-slate-500 dark:text-slate-400">Avg Diff</p>
+                <p>{formatNumber(field.differenceAvg, 2)}</p>
+                <p className="text-slate-500 dark:text-slate-400">Avg Tol</p>
+                <p>{formatNumber(field.toleranceAvg, 2)}</p>
+                <p className="text-slate-500 dark:text-slate-400">Worst Ratio</p>
+                <p>{formatNumber(field.worstRatio, 2)}x</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden overflow-auto sm:block">
+          <table className="w-full min-w-[980px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-100/80 text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200">
+                <th className="px-4 py-2 font-semibold tracking-[0.08em]">FIELD</th>
+                <th className="px-4 py-2 font-semibold tracking-[0.08em]">PASS %</th>
+                <th className="px-4 py-2 font-semibold tracking-[0.08em]">OK</th>
+                <th className="px-4 py-2 font-semibold tracking-[0.08em]">NO</th>
+                <th className="px-4 py-2 font-semibold tracking-[0.08em]">AVG PRED</th>
+                <th className="px-4 py-2 font-semibold tracking-[0.08em]">AVG ACTUAL</th>
+                <th className="px-4 py-2 font-semibold tracking-[0.08em]">AVG DIFF</th>
+                <th className="px-4 py-2 font-semibold tracking-[0.08em]">AVG TOL</th>
+                <th className="px-4 py-2 font-semibold tracking-[0.08em]">WORST RATIO</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fields.map((field) => (
+                <tr key={field.name} className="border-b border-slate-200/80 dark:border-white/10">
+                  <td className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-100">{field.name}</td>
+                  <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{formatNumber(field.passRatePct, 1)}%</td>
+                  <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{field.okCount}</td>
+                  <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{field.mismatchCount}</td>
+                  <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{formatNumber(field.predictedAvg, 2)}</td>
+                  <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{formatNumber(field.actualAvg, 2)}</td>
+                  <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{formatNumber(field.differenceAvg, 2)}</td>
+                  <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{formatNumber(field.toleranceAvg, 2)}</td>
+                  <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{formatNumber(field.worstRatio, 2)}x</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function AnnPanelPage() {
   const [view, setView] = useState<AnnView>('accuracy')
   const [isExporting, setIsExporting] = useState(false)
@@ -528,6 +673,8 @@ export function AnnPanelPage() {
     resolution,
     filters,
     setFilters,
+    timeFilter,
+    setTimeFilter,
     historyPage,
     historyPageSize,
     setHistoryPage,
@@ -554,6 +701,29 @@ export function AnnPanelPage() {
   const historyTotalRuns = history?.meta.totalRuns ?? 0
   const historyHasPrev = history?.meta.hasPrev ?? false
   const historyHasNext = history?.meta.hasNext ?? false
+  const fieldSummary = history?.fieldSummary ?? []
+
+  const isAdminSession = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return false
+    }
+
+    return Boolean(window.localStorage.getItem('token'))
+  }, [])
+
+  const hasInvalidTimeFilterRange = useMemo(() => {
+    if (!timeFilter.enabled || !timeFilter.startAtLocal || !timeFilter.endAtLocal) {
+      return false
+    }
+
+    const startAt = new Date(timeFilter.startAtLocal)
+    const endAt = new Date(timeFilter.endAtLocal)
+    if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
+      return false
+    }
+
+    return startAt.getTime() > endAt.getTime()
+  }, [timeFilter])
 
   const fieldName = fieldOptions.includes(selectedField)
     ? selectedField
@@ -632,7 +802,7 @@ export function AnnPanelPage() {
     setExportError(null)
 
     try {
-      const runsForExport = await fetchAllAnnRuns(range, filters)
+      const runsForExport = await fetchAllAnnRuns(range, filters, timeFilter)
       const rows: AnnPayloadExportRow[] = runsForExport.map((run) => ({
         timestampIso: run.createdAt,
         Timestamp: new Date(run.createdAt).toLocaleString('en-US'),
@@ -651,6 +821,9 @@ export function AnnPanelPage() {
         `weatherMismatch=${filters.weatherMismatch}`,
         `fieldGroup=${filters.fieldGroup}`,
         `relayApplied=${filters.relayApplied}`,
+        `customTime=${timeFilter.enabled}`,
+        `startAt=${timeFilter.startAtLocal || 'auto'}`,
+        `endAt=${timeFilter.endAtLocal || 'now'}`,
       ].join(', ')
 
       const overviewRows = [
@@ -760,93 +933,159 @@ export function AnnPanelPage() {
             Switch datasets from one dropdown to avoid long scrolling and focus on one signal at a time.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <label className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
-            <span className="text-xs uppercase tracking-[0.14em] text-slate-500">View</span>
-            <select
-              value={view}
-              onChange={(event) => setView(event.target.value as AnnView)}
-              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
-            >
-              {ANN_VIEW_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
-            <span className="text-xs uppercase tracking-[0.14em] text-slate-500">Range</span>
-            <select
-              value={range}
-              onChange={(event) => setRange(event.target.value as AnnRange)}
-              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
-            >
-              {Object.entries(ANN_RANGE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
-            <span className="text-xs uppercase tracking-[0.14em] text-slate-500">Overall Filter</span>
-            <select
-              value={filters.overallResult}
-              onChange={(event) =>
-                handleFilterChange(
-                  'overallResult',
-                  event.target.value as AnnDashboardFilters['overallResult'],
-                )
-              }
-              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
-            >
-              <option value="all">All runs</option>
-              <option value="CORRECT">Correct only</option>
-              <option value="INCORRECT">Incorrect only</option>
-            </select>
-          </label>
-
-          <label className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
-            <span className="text-xs uppercase tracking-[0.14em] text-slate-500">Sensor Filter</span>
-            <select
-              value={filters.sensorResult}
-              onChange={(event) =>
-                handleFilterChange(
-                  'sensorResult',
-                  event.target.value as AnnDashboardFilters['sensorResult'],
-                )
-              }
-              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
-            >
-              <option value="all">All states</option>
-              <option value="CORRECT">Correct only</option>
-              <option value="INCORRECT">Incorrect only</option>
-            </select>
-          </label>
-
-          {view === 'field' ? (
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <label className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
-              <span className="text-xs uppercase tracking-[0.14em] text-slate-500">Field</span>
+              <span className="text-xs uppercase tracking-[0.14em] text-slate-500">View</span>
               <select
-                value={fieldName}
-                onChange={(event) => setSelectedField(event.target.value)}
+                value={view}
+                onChange={(event) => setView(event.target.value as AnnView)}
                 className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
               >
-                {fieldOptions.map((field) => (
-                  <option key={field} value={field}>
-                    {field}
+                {ANN_VIEW_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>
             </label>
-          ) : (
-            <div className="rounded-2xl border border-slate-200 bg-slate-100/80 px-4 py-3 text-sm text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300">
-              Resolution: {resolution}
+
+            <label className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+              <span className="text-xs uppercase tracking-[0.14em] text-slate-500">Range</span>
+              <select
+                value={range}
+                onChange={(event) => setRange(event.target.value as AnnRange)}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+              >
+                {Object.entries(ANN_RANGE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+              <span className="text-xs uppercase tracking-[0.14em] text-slate-500">Overall Filter</span>
+              <select
+                value={filters.overallResult}
+                onChange={(event) =>
+                  handleFilterChange(
+                    'overallResult',
+                    event.target.value as AnnDashboardFilters['overallResult'],
+                  )
+                }
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+              >
+                <option value="all">All samples</option>
+                <option value="CORRECT">Correct only</option>
+                <option value="INCORRECT">Incorrect only</option>
+              </select>
+            </label>
+
+            <label className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+              <span className="text-xs uppercase tracking-[0.14em] text-slate-500">Sensor Filter</span>
+              <select
+                value={filters.sensorResult}
+                onChange={(event) =>
+                  handleFilterChange(
+                    'sensorResult',
+                    event.target.value as AnnDashboardFilters['sensorResult'],
+                  )
+                }
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+              >
+                <option value="all">All states</option>
+                <option value="CORRECT">Correct only</option>
+                <option value="INCORRECT">Incorrect only</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-100/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                Data Focus
+              </p>
+              {view === 'field' ? (
+                <label className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                  <span className="text-xs uppercase tracking-[0.14em] text-slate-500">Field</span>
+                  <select
+                    value={fieldName}
+                    onChange={(event) => setSelectedField(event.target.value)}
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    {fieldOptions.map((field) => (
+                      <option key={field} value={field}>
+                        {field}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <p className="text-sm text-slate-600 dark:text-slate-300">Resolution: {resolution}</p>
+              )}
             </div>
-          )}
+
+            {isAdminSession ? (
+              <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-100/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={timeFilter.enabled}
+                    onChange={(event) =>
+                      setTimeFilter((current) => ({
+                        ...current,
+                        enabled: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                  />
+                  <span className="text-xs uppercase tracking-[0.14em] text-slate-500">Admin Time Filter</span>
+                </label>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                    <span>Start</span>
+                    <input
+                      type="datetime-local"
+                      value={timeFilter.startAtLocal}
+                      onChange={(event) =>
+                        setTimeFilter((current) => ({
+                          ...current,
+                          startAtLocal: event.target.value,
+                        }))
+                      }
+                      disabled={!timeFilter.enabled}
+                      className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                  </label>
+
+                  <label className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                    <span>End</span>
+                    <input
+                      type="datetime-local"
+                      value={timeFilter.endAtLocal}
+                      onChange={(event) =>
+                        setTimeFilter((current) => ({
+                          ...current,
+                          endAtLocal: event.target.value,
+                        }))
+                      }
+                      disabled={!timeFilter.enabled}
+                      className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-cyan-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                  </label>
+                </div>
+
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {timeFilter.enabled
+                    ? 'Using custom ANN sample window based on createdAt timestamps.'
+                    : 'Disabled: range preset controls the ANN sample window.'}
+                </p>
+              </div>
+            ) : null}
+          </div>
         </CardContent>
       </Card>
 
@@ -858,10 +1097,26 @@ export function AnnPanelPage() {
         </Card>
       ) : null}
 
+      {hasInvalidTimeFilterRange ? (
+        <Card>
+          <CardContent className="pt-4 sm:pt-5">
+            <p className="text-sm text-rose-700 dark:text-rose-200">
+              Admin time filter is invalid: start must be earlier than end.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <AllRecordsFieldSummaryCard
+        fields={fieldSummary}
+        totalSamples={historyTotalRuns}
+        loading={loading}
+      />
+
       {view === 'accuracy' ? (
         <ChartCard
           title="Prediction Accuracy Time Series"
-          subtitle="ANN historical accuracy derived from persisted run history buckets."
+          subtitle="ANN historical accuracy derived from persisted sample records."
           data={accuracyData}
           series={[
             { key: 'accuracyPct', label: 'Accuracy', color: '#22c55e', type: 'line' },
@@ -875,7 +1130,7 @@ export function AnnPanelPage() {
       {view === 'weather' ? (
         <ChartCard
           title="Weather Check Time Series"
-          subtitle="Pass rates for weather code, time, temperature, and humidity checks over history."
+          subtitle="Pass rates for weather code, time, temperature, and humidity checks across sample records."
           data={weatherTrendData}
           series={[
             { key: 'weatherCode', label: 'Weather Code', color: '#38bdf8', type: 'line' },
@@ -924,12 +1179,12 @@ export function AnnPanelPage() {
           <div className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Run Detail</CardTitle>
-                <CardDescription>Selected ANN prediction run summary and mismatch highlights.</CardDescription>
+                <CardTitle>Sample Detail</CardTitle>
+                <CardDescription>Selected ANN sample record summary and mismatch highlights.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant="neutral">Run ID {detailRun.id}</Badge>
+                  <Badge variant="neutral">Record ID {detailRun.id}</Badge>
                   <Badge variant="neutral">Prediction ID {detailRun.predictionId ?? 'N/A'}</Badge>
                   <Badge variant={statusVariant(detailRun.overallResult)}>{detailRun.overallResult}</Badge>
                   <Badge variant={statusVariant(detailRun.sensorResult)}>{detailRun.sensorResult}</Badge>
@@ -994,7 +1249,7 @@ export function AnnPanelPage() {
           <Card>
             <CardContent className="pt-4 sm:pt-5">
               <p className="text-sm text-slate-600 dark:text-slate-300">
-                Select a run from a chart point or history row to open detail view.
+                Select a sample from a chart point or history row to open detail view.
               </p>
             </CardContent>
           </Card>
@@ -1010,9 +1265,9 @@ export function AnnPanelPage() {
       ) : null}
 
       {isPayloadModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 px-4" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/70 px-2 py-4 sm:items-center sm:px-4" role="dialog" aria-modal="true">
           <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-950">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-white/10">
+            <div className="flex flex-col gap-2 border-b border-slate-200 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 dark:border-white/10">
               <div>
                 <p className="text-sm font-semibold text-slate-900 dark:text-white">ANN Record Payload</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -1022,38 +1277,38 @@ export function AnnPanelPage() {
               <button
                 type="button"
                 onClick={closePayloadModal}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 dark:border-white/10 dark:text-slate-200 dark:hover:bg-slate-800"
+                className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 sm:w-auto dark:border-white/10 dark:text-slate-200 dark:hover:bg-slate-800"
               >
                 Close
               </button>
             </div>
 
-            <div className="max-h-[75vh] overflow-auto p-4">
+            <div className="max-h-[78vh] overflow-auto p-3 sm:max-h-[75vh] sm:p-4">
               {detailLoading ? (
                 <p className="text-sm text-slate-600 dark:text-slate-300">Loading payload...</p>
               ) : null}
 
               {detailRun ? (
                 <div className="space-y-4 font-mono">
-                  <div className="rounded-xl border border-slate-200 bg-slate-100/80 px-4 py-3 text-center text-xs font-semibold tracking-[0.08em] text-slate-800 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-100 sm:text-sm">
+                  <div className="rounded-xl border border-slate-200 bg-slate-100/80 px-3 py-3 text-center text-[10px] font-semibold tracking-[0.03em] text-slate-800 [overflow-wrap:anywhere] dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-100 sm:px-4 sm:text-sm sm:tracking-[0.08em]">
                     ########## ALL {detailRun.samples.history.length} SAMPLES | SET {detailRun.predictionId ?? detailRun.id} ##########
                   </div>
 
                   {detailRun.samples.history.map((sample, index) => (
                     <div key={sample.sampleNo ?? index} className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
-                      <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                      <div className="border-b border-slate-200 bg-slate-100/80 px-3 py-2 text-center text-[10px] font-semibold tracking-[0.03em] text-slate-700 [overflow-wrap:anywhere] dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:px-4 sm:text-sm sm:tracking-[0.08em]">
                         -------------- SAMPLE {index + 1} --------------
                       </div>
                       <SampleReportTable sample={sample} />
                     </div>
                   ))}
 
-                  <div className="rounded-xl border border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-800 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-100 sm:text-sm">
+                  <div className="rounded-xl border border-slate-200 bg-slate-100/80 px-3 py-2 text-center text-[10px] font-semibold tracking-[0.03em] text-slate-800 [overflow-wrap:anywhere] dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-100 sm:px-4 sm:text-sm sm:tracking-[0.08em]">
                     ######################################################
                   </div>
 
                   <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
-                    <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                    <div className="border-b border-slate-200 bg-slate-100/80 px-3 py-2 text-center text-[10px] font-semibold tracking-[0.03em] text-slate-700 [overflow-wrap:anywhere] dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:px-4 sm:text-sm sm:tracking-[0.08em]">
                       ============= PREDICTED WEATHER / TIME / TEMP / HUMIDITY =============
                     </div>
                     <WeatherReportTable
@@ -1067,7 +1322,7 @@ export function AnnPanelPage() {
                   </div>
 
                   <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
-                    <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                    <div className="border-b border-slate-200 bg-slate-100/80 px-3 py-2 text-center text-[10px] font-semibold tracking-[0.03em] text-slate-700 [overflow-wrap:anywhere] dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:px-4 sm:text-sm sm:tracking-[0.08em]">
                       ========== PREDICTED NEXT SAMPLE ==========
                     </div>
                     <SampleReportTable sample={detailRun.samples.predictedNext} />
@@ -1085,7 +1340,7 @@ export function AnnPanelPage() {
                   </div>
 
                   <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
-                    <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                    <div className="border-b border-slate-200 bg-slate-100/80 px-3 py-2 text-center text-[10px] font-semibold tracking-[0.03em] text-slate-700 [overflow-wrap:anywhere] dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:px-4 sm:text-sm sm:tracking-[0.08em]">
                       ============= ACTUAL WEATHER / TIME / TEMP / HUMIDITY =============
                     </div>
                     <WeatherReportTable
@@ -1099,62 +1354,94 @@ export function AnnPanelPage() {
                   </div>
 
                   <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
-                    <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                    <div className="border-b border-slate-200 bg-slate-100/80 px-3 py-2 text-center text-[10px] font-semibold tracking-[0.03em] text-slate-700 [overflow-wrap:anywhere] dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:px-4 sm:text-sm sm:tracking-[0.08em]">
                       ============ ACTUAL NEXT SAMPLE FOR CHECK ============
                     </div>
                     <SampleReportTable sample={detailRun.samples.actualNext} />
                   </div>
 
                   <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
-                    <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                    <div className="border-b border-slate-200 bg-slate-100/80 px-3 py-2 text-center text-[10px] font-semibold tracking-[0.03em] text-slate-700 [overflow-wrap:anywhere] dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:px-4 sm:text-sm sm:tracking-[0.08em]">
                       ========== PREDICTED WEATHER CHECK ==========
                     </div>
-                    <table className="w-full text-left text-xs sm:text-sm">
-                      <tbody>
-                        <tr className="border-b border-slate-200/80 dark:border-white/10">
-                          <th className="w-[280px] px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">WEATHER CODE RESULT</th>
-                          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatAnnResultLabel(detailRun.weather.check.weatherCodeResult)}</td>
-                        </tr>
-                        <tr className="border-b border-slate-200/80 dark:border-white/10">
-                          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">TIME RESULT</th>
-                          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatAnnResultLabel(detailRun.weather.check.timeResult)}</td>
-                        </tr>
-                        <tr className="border-b border-slate-200/80 dark:border-white/10">
-                          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">TEMP RESULT</th>
-                          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatAnnResultLabel(detailRun.weather.check.tempResult)}</td>
-                        </tr>
-                        <tr>
-                          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">HUMIDITY RESULT</th>
-                          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatAnnResultLabel(detailRun.weather.check.humidityResult)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
+                    <div className="text-xs sm:text-sm">
+                      <ResponsiveReportRows
+                        rows={[
+                          {
+                            label: 'WEATHER CODE RESULT',
+                            value: formatAnnResultLabel(detailRun.weather.check.weatherCodeResult),
+                          },
+                          { label: 'TIME RESULT', value: formatAnnResultLabel(detailRun.weather.check.timeResult) },
+                          { label: 'TEMP RESULT', value: formatAnnResultLabel(detailRun.weather.check.tempResult) },
+                          {
+                            label: 'HUMIDITY RESULT',
+                            value: formatAnnResultLabel(detailRun.weather.check.humidityResult),
+                          },
+                        ]}
+                        desktopLabelWidthClass="sm:w-[280px]"
+                      />
+                    </div>
                   </div>
 
                   <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
-                    <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                    <div className="border-b border-slate-200 bg-slate-100/80 px-3 py-2 text-center text-[10px] font-semibold tracking-[0.03em] text-slate-700 [overflow-wrap:anywhere] dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:px-4 sm:text-sm sm:tracking-[0.08em]">
                       ========== PREDICTION CHECK ==========
                     </div>
-                    <table className="w-full text-left text-xs sm:text-sm">
-                      <tbody>
-                        <tr className="border-b border-slate-200/80 dark:border-white/10">
-                          <th className="w-[220px] px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">SENSOR RESULT</th>
-                          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatAnnResultLabel(detailRun.predictionCheck.sensorResult)}</td>
-                        </tr>
-                        <tr>
-                          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">OVERALL RESULT</th>
-                          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatAnnResultLabel(detailRun.predictionCheck.overallResult)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
+                    <div className="text-xs sm:text-sm">
+                      <ResponsiveReportRows
+                        rows={[
+                          {
+                            label: 'SENSOR RESULT',
+                            value: formatAnnResultLabel(detailRun.predictionCheck.sensorResult),
+                          },
+                          {
+                            label: 'OVERALL RESULT',
+                            value: formatAnnResultLabel(detailRun.predictionCheck.overallResult),
+                          },
+                        ]}
+                        desktopLabelWidthClass="sm:w-[220px]"
+                      />
+                    </div>
                   </div>
 
                   <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
-                    <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                    <div className="border-b border-slate-200 bg-slate-100/80 px-3 py-2 text-center text-[10px] font-semibold tracking-[0.03em] text-slate-700 [overflow-wrap:anywhere] dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:px-4 sm:text-sm sm:tracking-[0.08em]">
                       ========== FIELD-BY-FIELD CHECK ==========
                     </div>
-                    <div className="overflow-auto">
-                      <table className="w-full min-w-[920px] text-left text-xs sm:text-sm">
+                    <div className="space-y-2 p-2 sm:hidden">
+                      {detailRun.predictionCheck.fields.map((field) => {
+                        const isRelay = field.name.toUpperCase().startsWith('RELAY')
+                        const displayPred = isRelay
+                          ? formatRelayFieldValue(field.predicted)
+                          : formatNumber(field.predicted, 2)
+                        const displayActual = isRelay
+                          ? formatRelayFieldValue(field.actual)
+                          : formatNumber(field.actual, 2)
+
+                        return (
+                          <div key={field.name} className="rounded-lg border border-slate-200 p-2 dark:border-white/10">
+                            <p className="text-[11px] font-semibold tracking-[0.06em] text-slate-800 dark:text-slate-100">
+                              {field.name}
+                            </p>
+                            <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-xs text-slate-700 dark:text-slate-300">
+                              <p className="text-slate-500 dark:text-slate-400">PRED</p>
+                              <p className="break-words">{displayPred}</p>
+                              <p className="text-slate-500 dark:text-slate-400">ACTUAL</p>
+                              <p className="break-words">{displayActual}</p>
+                              <p className="text-slate-500 dark:text-slate-400">DIFF</p>
+                              <p>{formatNumber(field.difference, 2)}</p>
+                              <p className="text-slate-500 dark:text-slate-400">TOL</p>
+                              <p>{formatNumber(field.tolerance, 2)}</p>
+                              <p className="text-slate-500 dark:text-slate-400">RESULT</p>
+                              <p>{field.status.toUpperCase() === 'OK' ? 'OK' : 'NO'}</p>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    <div className="hidden overflow-auto sm:block">
+                      <table className="w-full min-w-[920px] text-left text-sm">
                         <thead>
                           <tr className="border-b border-slate-200 bg-slate-100/80 text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200">
                             <th className="px-4 py-2 font-semibold tracking-[0.08em]">FIELD</th>

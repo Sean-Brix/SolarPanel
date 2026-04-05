@@ -42,6 +42,19 @@ function parseBoolean(value: unknown, fallback: boolean) {
   return fallback
 }
 
+function parseIsoDate(value: unknown) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return null
+  }
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+
+  return parsed
+}
+
 router.get('/latest', async (_req, res) => {
   const record = await prisma.annPredictionRun.findFirst({
     // Latest should reflect newest MQTT-ingested run, even if the device timestamp is older.
@@ -77,13 +90,32 @@ router.get('/history', async (req, res) => {
   const includeTrend = parseBoolean(req.query.includeTrend, true)
 
   const filters = parseAnnHistoryFilters(req.query as Record<string, unknown>)
-  const startAt = new Date(Date.now() - ANN_RANGE_TO_MS[range])
+  const requestedStartAt = parseIsoDate(req.query.startAt)
+  const requestedEndAt = parseIsoDate(req.query.endAt)
+
+  if (typeof req.query.startAt === 'string' && !requestedStartAt) {
+    return res.status(400).json({ message: 'startAt must be a valid ISO date/time' })
+  }
+
+  if (typeof req.query.endAt === 'string' && !requestedEndAt) {
+    return res.status(400).json({ message: 'endAt must be a valid ISO date/time' })
+  }
+
+  const customTimeFilter = Boolean(requestedStartAt || requestedEndAt)
+  const fallbackStartAt = new Date(Date.now() - ANN_RANGE_TO_MS[range])
+  const startAt = requestedStartAt ?? fallbackStartAt
+  const endAt = requestedEndAt ?? new Date()
+
+  if (startAt.getTime() > endAt.getTime()) {
+    return res.status(400).json({ message: 'startAt must be earlier than or equal to endAt' })
+  }
 
   const records = await prisma.annPredictionRun.findMany({
     where: {
       // Windowing on ingestion time keeps the dashboard realtime for delayed/static device clocks.
       createdAt: {
         gte: startAt,
+        lte: endAt,
       },
     },
     orderBy: { createdAt: 'asc' },
@@ -99,6 +131,15 @@ router.get('/history', async (req, res) => {
       pageSize,
       includeTrend,
       filters,
+      timeFilter: {
+        startAt,
+        endAt,
+        custom: customTimeFilter,
+      },
+      requestedTimeFilter: {
+        startAt: typeof req.query.startAt === 'string' ? req.query.startAt : null,
+        endAt: typeof req.query.endAt === 'string' ? req.query.endAt : null,
+      },
     }),
   )
 })

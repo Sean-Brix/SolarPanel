@@ -26,12 +26,37 @@ export type AnnDashboardFilters = {
   relayApplied: 'all' | 'true' | 'false'
 }
 
+export type AnnDashboardTimeFilter = {
+  enabled: boolean
+  startAtLocal: string
+  endAtLocal: string
+}
+
 const DEFAULT_FILTERS: AnnDashboardFilters = {
   overallResult: 'all',
   sensorResult: 'all',
   weatherMismatch: 'all',
   fieldGroup: 'all',
   relayApplied: 'all',
+}
+
+const DEFAULT_TIME_FILTER: AnnDashboardTimeFilter = {
+  enabled: false,
+  startAtLocal: '',
+  endAtLocal: '',
+}
+
+function toIsoDateOrNull(value: string) {
+  if (!value) {
+    return null
+  }
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+
+  return parsed.toISOString()
 }
 
 function buildHistoryQuery(
@@ -41,6 +66,7 @@ function buildHistoryQuery(
   pageSize: number,
   includeTrend: boolean,
   filters: AnnDashboardFilters,
+  timeFilter: AnnDashboardTimeFilter,
 ) {
   const params = new URLSearchParams({
     range,
@@ -70,6 +96,19 @@ function buildHistoryQuery(
     params.set('relayApplied', filters.relayApplied)
   }
 
+  if (timeFilter.enabled) {
+    const startAtIso = toIsoDateOrNull(timeFilter.startAtLocal)
+    const endAtIso = toIsoDateOrNull(timeFilter.endAtLocal)
+
+    if (startAtIso) {
+      params.set('startAt', startAtIso)
+    }
+
+    if (endAtIso) {
+      params.set('endAt', endAtIso)
+    }
+  }
+
   return params.toString()
 }
 
@@ -96,6 +135,7 @@ type AnnDashboardDataOptions = {
 export function useAnnDashboardData(options: AnnDashboardDataOptions = {}) {
   const [range, setRange] = useState<AnnRange>('1h')
   const [filters, setFilters] = useState<AnnDashboardFilters>(DEFAULT_FILTERS)
+  const [timeFilter, setTimeFilter] = useState<AnnDashboardTimeFilter>(DEFAULT_TIME_FILTER)
   const [historyPage, setHistoryPage] = useState(1)
   const [historyPageSize, setHistoryPageSize] = useState(ANN_DEFAULT_PAGE_SIZE)
   const [selectedField, setSelectedField] = useState('VOLTAGE')
@@ -110,8 +150,17 @@ export function useAnnDashboardData(options: AnnDashboardDataOptions = {}) {
   const includeTrend = options.includeTrend ?? true
   const resolution = DEFAULT_RESOLUTION[range]
   const query = useMemo(
-    () => buildHistoryQuery(range, resolution, historyPage, historyPageSize, includeTrend, filters),
-    [filters, historyPage, historyPageSize, includeTrend, range, resolution],
+    () =>
+      buildHistoryQuery(
+        range,
+        resolution,
+        historyPage,
+        historyPageSize,
+        includeTrend,
+        filters,
+        timeFilter,
+      ),
+    [filters, historyPage, historyPageSize, includeTrend, range, resolution, timeFilter],
   )
 
   const setPage = useCallback((page: number) => {
@@ -126,7 +175,7 @@ export function useAnnDashboardData(options: AnnDashboardDataOptions = {}) {
 
   useEffect(() => {
     setHistoryPage(1)
-  }, [range, filters])
+  }, [range, filters, timeFilter])
 
   useEffect(() => {
     let active = true
@@ -359,6 +408,8 @@ export function useAnnDashboardData(options: AnnDashboardDataOptions = {}) {
     resolution,
     filters,
     setFilters,
+    timeFilter,
+    setTimeFilter,
     historyPage,
     historyPageSize,
     setHistoryPage: setPage,

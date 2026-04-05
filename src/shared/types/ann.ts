@@ -144,6 +144,21 @@ export type AnnTrendPoint = {
   fieldStats: Record<string, AnnTrendFieldStat>
 }
 
+export type AnnFieldSummary = {
+  name: string
+  group: AnnFieldGroup
+  sampleCount: number
+  okCount: number
+  mismatchCount: number
+  passRatePct: number
+  predictedAvg: number
+  actualAvg: number
+  differenceAvg: number
+  toleranceAvg: number
+  worstDifference: number
+  worstRatio: number
+}
+
 export type AnnHistoryResponse = {
   meta: {
     range: AnnRange
@@ -157,14 +172,22 @@ export type AnnHistoryResponse = {
     hasNext: boolean
     includeTrend: boolean
     generatedAt: string
+    timeFilter: {
+      startAt: string
+      endAt: string
+      custom: boolean
+    }
     activeFilters: {
       overallResult: string | null
       sensorResult: string | null
       weatherMismatch: boolean | null
       fieldGroup: AnnFieldGroup | null
       relayApplied: boolean | null
+      startAt: string | null
+      endAt: string | null
     }
   }
   runs: AnnRunSummary[]
   trend: AnnTrendPoint[]
+  fieldSummary: AnnFieldSummary[]
 }

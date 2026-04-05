@@ -178,6 +178,20 @@ type ParsedHistoryFilters = {
   relayApplied?: boolean
 }
 
+type FieldSummaryAccumulator = {
+  name: string
+  group: AnnFieldGroup
+  sampleCount: number
+  okCount: number
+  mismatchCount: number
+  predictedSum: number
+  actualSum: number
+  differenceSum: number
+  toleranceSum: number
+  worstDifference: number
+  worstRatio: number
+}
+
 const SAMPLE_NUMERIC_KEYS = [
   'ldr1',
   'ldr2',
@@ -995,6 +1009,89 @@ function finalizeTrendAccumulator(accumulator: TrendAccumulator, resolution: Ann
   }
 }
 
+function buildFieldSummary(
+  records: SummaryRecord[],
+  getFields: (record: SummaryRecord) => AnnFieldResult[],
+) {
+  const fieldsByName = new Map<string, FieldSummaryAccumulator>()
+
+  for (const record of records) {
+    const fields = getFields(record)
+
+    for (const field of fields) {
+      const current = fieldsByName.get(field.name) ?? {
+        name: field.name,
+        group: field.group,
+        sampleCount: 0,
+        okCount: 0,
+        mismatchCount: 0,
+        predictedSum: 0,
+        actualSum: 0,
+        differenceSum: 0,
+        toleranceSum: 0,
+        worstDifference: 0,
+        worstRatio: 0,
+      }
+
+      current.sampleCount += 1
+      current.okCount += isFieldOkStatus(field.status) ? 1 : 0
+      current.mismatchCount += isFieldOkStatus(field.status) ? 0 : 1
+      current.predictedSum += field.predicted
+      current.actualSum += field.actual
+      current.differenceSum += field.difference
+      current.toleranceSum += field.tolerance
+      current.worstDifference = Math.max(current.worstDifference, field.difference)
+
+      const ratio = getWorstFieldRatio(field.difference, field.tolerance)
+      current.worstRatio = Math.max(current.worstRatio, ratio)
+
+      fieldsByName.set(field.name, current)
+    }
+  }
+
+  return Array.from(fieldsByName.values())
+    .map((field) => ({
+      name: field.name,
+      group: field.group,
+      sampleCount: field.sampleCount,
+      okCount: field.okCount,
+      mismatchCount: field.mismatchCount,
+      passRatePct:
+        field.sampleCount > 0
+          ? Number(((field.okCount / field.sampleCount) * 100).toFixed(2))
+          : 0,
+      predictedAvg:
+        field.sampleCount > 0
+          ? Number((field.predictedSum / field.sampleCount).toFixed(4))
+          : 0,
+      actualAvg:
+        field.sampleCount > 0
+          ? Number((field.actualSum / field.sampleCount).toFixed(4))
+          : 0,
+      differenceAvg:
+        field.sampleCount > 0
+          ? Number((field.differenceSum / field.sampleCount).toFixed(4))
+          : 0,
+      toleranceAvg:
+        field.sampleCount > 0
+          ? Number((field.toleranceSum / field.sampleCount).toFixed(4))
+          : 0,
+      worstDifference: Number(field.worstDifference.toFixed(4)),
+      worstRatio: Number(field.worstRatio.toFixed(4)),
+    }))
+    .sort((left, right) => {
+      if (left.passRatePct !== right.passRatePct) {
+        return left.passRatePct - right.passRatePct
+      }
+
+      if (left.worstRatio !== right.worstRatio) {
+        return right.worstRatio - left.worstRatio
+      }
+
+      return left.name.localeCompare(right.name)
+    })
+}
+
 function applyHistoryFilters(
   records: SummaryRecord[],
   filters: ParsedHistoryFilters,
@@ -1072,6 +1169,15 @@ export function buildAnnHistoryResponse(args: {
   pageSize: number
   includeTrend: boolean
   filters: ParsedHistoryFilters
+  timeFilter: {
+    startAt: Date
+    endAt: Date
+    custom: boolean
+  }
+  requestedTimeFilter: {
+    startAt: string | null
+    endAt: string | null
+  }
 }) {
   const fieldResultsCache = new Map<number, AnnFieldResult[]>()
   const getFields = (record: SummaryRecord) => {
@@ -1121,6 +1227,8 @@ export function buildAnnHistoryResponse(args: {
           .map(([, accumulator]) => finalizeTrendAccumulator(accumulator, args.resolution))
     : []
 
+  const fieldSummary = buildFieldSummary(ordered, getFields)
+
   return {
     meta: {
       range: args.range,
@@ -1134,15 +1242,23 @@ export function buildAnnHistoryResponse(args: {
       hasNext: page < totalPages,
       includeTrend: args.includeTrend,
       generatedAt: new Date().toISOString(),
+      timeFilter: {
+        startAt: args.timeFilter.startAt.toISOString(),
+        endAt: args.timeFilter.endAt.toISOString(),
+        custom: args.timeFilter.custom,
+      },
       activeFilters: {
         overallResult: args.filters.overallResult ?? null,
         sensorResult: args.filters.sensorResult ?? null,
         weatherMismatch: args.filters.weatherMismatch ?? null,
         fieldGroup: args.filters.fieldGroup ?? null,
         relayApplied: args.filters.relayApplied ?? null,
+        startAt: args.requestedTimeFilter.startAt,
+        endAt: args.requestedTimeFilter.endAt,
       },
     },
     runs: historyRuns,
     trend,
+    fieldSummary,
   }
 }
