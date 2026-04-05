@@ -10,7 +10,14 @@ import { cn } from '@/shared/lib/cn'
 import { fetchJsonCached } from '@/shared/lib/apiCache'
 import { buildDaySheets, exportWorkbookByDay } from '@/shared/lib/excelExport'
 import { formatDateTime, formatNumber } from '@/shared/lib/formatters'
-import type { AnnFieldResult, AnnHistoryResponse, AnnRange, AnnResolution, AnnRunSummary } from '@/shared/types/ann'
+import type {
+  AnnFieldResult,
+  AnnHistoryResponse,
+  AnnRange,
+  AnnResolution,
+  AnnRunSummary,
+  AnnSample,
+} from '@/shared/types/ann'
 import { Badge } from '@/shared/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/ui/card'
 import { ScrollArea } from '@/shared/ui/scroll-area'
@@ -38,16 +45,6 @@ type AnnPayloadExportRow = {
   RunId: number
   Payload?: string
   [key: string]: string | number | boolean | null | undefined
-}
-
-type AnnPayloadEntry = {
-  key: string
-  value: string
-}
-
-type AnnPayloadGroup = {
-  name: string
-  entries: AnnPayloadEntry[]
 }
 
 function formatPrimitive(value: unknown) {
@@ -104,20 +101,6 @@ function buildAnnPayloadColumns(run: AnnRunSummary) {
   const entries = Object.entries(flat).sort(([left], [right]) => left.localeCompare(right))
 
   return Object.fromEntries(entries)
-}
-
-function groupAnnPayloadEntries(run: AnnRunSummary): AnnPayloadGroup[] {
-  const flat = flattenAnnPayload(run)
-  const groups = new Map<string, AnnPayloadEntry[]>()
-
-  for (const [key, value] of Object.entries(flat).sort(([left], [right]) => left.localeCompare(right))) {
-    const groupName = key.includes('.') ? key.slice(0, key.indexOf('.')) : 'root'
-    const groupEntries = groups.get(groupName) ?? []
-    groupEntries.push({ key, value })
-    groups.set(groupName, groupEntries)
-  }
-
-  return [...groups.entries()].map(([name, entries]) => ({ name, entries }))
 }
 
 const ANN_EXPORT_PAGE_SIZE = 500
@@ -234,6 +217,121 @@ function mismatchRatio(field: AnnFieldResult) {
   }
 
   return field.difference === 0 ? 0 : 1
+}
+
+function formatAnnResultLabel(value: string) {
+  const normalized = value.toUpperCase().replace(/_/g, ' ')
+  if (normalized === 'INCORRECT' || normalized === 'MISMATCH') {
+    return 'NOT CORRECT'
+  }
+
+  return normalized
+}
+
+function toRelayStateLabel(value: number, state?: string) {
+  const normalized = (state ?? '').toUpperCase()
+
+  if (normalized.includes('CLOSE') || normalized === 'OFF' || value === 0) {
+    return 'CLOSED'
+  }
+
+  if (normalized.includes('OPEN') || normalized === 'ON' || value === 1) {
+    return 'OPEN'
+  }
+
+  return normalized || (value === 0 ? 'CLOSED' : 'OPEN')
+}
+
+function formatRelaySampleValue(sampleRelay: AnnSample['relay1']) {
+  return `${formatNumber(sampleRelay.value, 0)} (${toRelayStateLabel(sampleRelay.value, sampleRelay.state)})`
+}
+
+function formatRelayFieldValue(value: number) {
+  return `${formatNumber(value, 0)} (${toRelayStateLabel(value)})`
+}
+
+const ANN_SAMPLE_FIELDS: Array<{ label: string; read: (sample: AnnSample) => string }> = [
+  { label: 'LDR1', read: (sample) => formatNumber(sample.ldr1, 2) },
+  { label: 'LDR2', read: (sample) => formatNumber(sample.ldr2, 2) },
+  { label: 'LDR3', read: (sample) => formatNumber(sample.ldr3, 2) },
+  { label: 'LDR4', read: (sample) => formatNumber(sample.ldr4, 2) },
+  { label: 'ACCX', read: (sample) => formatNumber(sample.accX, 2) },
+  { label: 'ACCY', read: (sample) => formatNumber(sample.accY, 2) },
+  { label: 'ACCZ', read: (sample) => formatNumber(sample.accZ, 2) },
+  { label: 'GYROX', read: (sample) => formatNumber(sample.gyroX, 2) },
+  { label: 'GYROY', read: (sample) => formatNumber(sample.gyroY, 2) },
+  { label: 'GYROZ', read: (sample) => formatNumber(sample.gyroZ, 2) },
+  { label: 'VOLTAGE', read: (sample) => formatNumber(sample.voltage, 2) },
+  { label: 'CURRENT_MA', read: (sample) => formatNumber(sample.currentMa, 2) },
+  { label: 'POWER_MW', read: (sample) => formatNumber(sample.powerMw, 2) },
+  { label: 'RELAY1', read: (sample) => formatRelaySampleValue(sample.relay1) },
+  { label: 'RELAY2', read: (sample) => formatRelaySampleValue(sample.relay2) },
+  { label: 'RELAY3', read: (sample) => formatRelaySampleValue(sample.relay3) },
+  { label: 'RELAY4', read: (sample) => formatRelaySampleValue(sample.relay4) },
+]
+
+function SampleReportTable({ sample }: { sample: AnnSample }) {
+  return (
+    <table className="w-full text-left text-xs sm:text-sm">
+      <tbody>
+        {ANN_SAMPLE_FIELDS.map((field) => (
+          <tr key={field.label} className="border-b border-slate-200/80 dark:border-white/10">
+            <th className="w-[180px] px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100 sm:w-[220px]">
+              {field.label}
+            </th>
+            <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {field.read(sample)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function WeatherReportTable({
+  timestamp,
+  hour,
+  weatherCode,
+  weather,
+  temperatureC,
+  humidity,
+}: {
+  timestamp: string
+  hour: number
+  weatherCode: number
+  weather: string
+  temperatureC: number
+  humidity: number
+}) {
+  return (
+    <table className="w-full text-left text-xs sm:text-sm">
+      <tbody>
+        <tr className="border-b border-slate-200/80 dark:border-white/10">
+          <th className="w-[180px] px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100 sm:w-[220px]">TIMESTAMP</th>
+          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {timestamp}</td>
+        </tr>
+        <tr className="border-b border-slate-200/80 dark:border-white/10">
+          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">HOUR</th>
+          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatNumber(hour, 0)}</td>
+        </tr>
+        <tr className="border-b border-slate-200/80 dark:border-white/10">
+          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">WEATHER CODE</th>
+          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatNumber(weatherCode, 0)}</td>
+        </tr>
+        <tr className="border-b border-slate-200/80 dark:border-white/10">
+          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">WEATHER</th>
+          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {weather}</td>
+        </tr>
+        <tr className="border-b border-slate-200/80 dark:border-white/10">
+          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">TEMP C</th>
+          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatNumber(temperatureC, 1)}</td>
+        </tr>
+        <tr>
+          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">HUMIDITY %</th>
+          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatNumber(humidity, 0)}</td>
+        </tr>
+      </tbody>
+    </table>
+  )
 }
 
 function SummaryTile({
@@ -936,26 +1034,166 @@ export function AnnPanelPage() {
               ) : null}
 
               {detailRun ? (
-                <div className="space-y-4">
-                  {groupAnnPayloadEntries(detailRun).map((group) => (
-                    <div key={group.name} className="rounded-xl border border-slate-200 dark:border-white/10">
-                      <div className="border-b border-slate-200 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:border-white/10 dark:text-slate-400">
-                        {group.name}
+                <div className="space-y-4 font-mono">
+                  <div className="rounded-xl border border-slate-200 bg-slate-100/80 px-4 py-3 text-center text-xs font-semibold tracking-[0.08em] text-slate-800 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-100 sm:text-sm">
+                    ########## ALL {detailRun.samples.history.length} SAMPLES | SET {detailRun.predictionId ?? detailRun.id} ##########
+                  </div>
+
+                  {detailRun.samples.history.map((sample, index) => (
+                    <div key={sample.sampleNo ?? index} className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
+                      <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                        -------------- SAMPLE {index + 1} --------------
                       </div>
-                      <div className="divide-y divide-slate-200 dark:divide-white/10">
-                        {group.entries.map((entry) => (
-                          <div key={entry.key} className="grid gap-2 px-4 py-3 sm:grid-cols-[260px_minmax(0,1fr)]">
-                            <div className="break-words text-sm font-medium text-slate-900 dark:text-white">
-                              {entry.key}
-                            </div>
-                            <div className="break-words font-mono text-xs leading-5 text-slate-700 dark:text-slate-300">
-                              {entry.value}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      <SampleReportTable sample={sample} />
                     </div>
                   ))}
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-800 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-100 sm:text-sm">
+                    ######################################################
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
+                    <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                      ============= PREDICTED WEATHER / TIME / TEMP / HUMIDITY =============
+                    </div>
+                    <WeatherReportTable
+                      timestamp={detailRun.weather.predicted.timestamp}
+                      hour={detailRun.weather.predicted.hour}
+                      weatherCode={detailRun.weather.predicted.weatherCode}
+                      weather={detailRun.weather.predicted.weather}
+                      temperatureC={detailRun.weather.predicted.temperatureC}
+                      humidity={detailRun.weather.predicted.humidity}
+                    />
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
+                    <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                      ========== PREDICTED NEXT SAMPLE ==========
+                    </div>
+                    <SampleReportTable sample={detailRun.samples.predictedNext} />
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-100/80 px-4 py-3 text-center text-xs text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                    <p>==============================================</p>
+                    <p className="font-semibold">NEW SET SAVED AS SET ID {detailRun.predictionId ?? detailRun.id}</p>
+                    <p>{detailRun.samples.history.length} samples and prediction saved successfully.</p>
+                    <p>==============================================</p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-700 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 sm:text-sm">
+                    Waiting for next accepted fresh sample to validate prediction...
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
+                    <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                      ============= ACTUAL WEATHER / TIME / TEMP / HUMIDITY =============
+                    </div>
+                    <WeatherReportTable
+                      timestamp={detailRun.weather.actual.timestamp}
+                      hour={detailRun.weather.actual.hour}
+                      weatherCode={detailRun.weather.actual.weatherCode}
+                      weather={detailRun.weather.actual.weather}
+                      temperatureC={detailRun.weather.actual.temperatureC}
+                      humidity={detailRun.weather.actual.humidity}
+                    />
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
+                    <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                      ============ ACTUAL NEXT SAMPLE FOR CHECK ============
+                    </div>
+                    <SampleReportTable sample={detailRun.samples.actualNext} />
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
+                    <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                      ========== PREDICTED WEATHER CHECK ==========
+                    </div>
+                    <table className="w-full text-left text-xs sm:text-sm">
+                      <tbody>
+                        <tr className="border-b border-slate-200/80 dark:border-white/10">
+                          <th className="w-[280px] px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">WEATHER CODE RESULT</th>
+                          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatAnnResultLabel(detailRun.weather.check.weatherCodeResult)}</td>
+                        </tr>
+                        <tr className="border-b border-slate-200/80 dark:border-white/10">
+                          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">TIME RESULT</th>
+                          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatAnnResultLabel(detailRun.weather.check.timeResult)}</td>
+                        </tr>
+                        <tr className="border-b border-slate-200/80 dark:border-white/10">
+                          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">TEMP RESULT</th>
+                          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatAnnResultLabel(detailRun.weather.check.tempResult)}</td>
+                        </tr>
+                        <tr>
+                          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">HUMIDITY RESULT</th>
+                          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatAnnResultLabel(detailRun.weather.check.humidityResult)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
+                    <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                      ========== PREDICTION CHECK ==========
+                    </div>
+                    <table className="w-full text-left text-xs sm:text-sm">
+                      <tbody>
+                        <tr className="border-b border-slate-200/80 dark:border-white/10">
+                          <th className="w-[220px] px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">SENSOR RESULT</th>
+                          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatAnnResultLabel(detailRun.predictionCheck.sensorResult)}</td>
+                        </tr>
+                        <tr>
+                          <th className="px-4 py-1.5 font-semibold tracking-[0.08em] text-slate-800 dark:text-slate-100">OVERALL RESULT</th>
+                          <td className="px-4 py-1.5 text-slate-700 dark:text-slate-300">: {formatAnnResultLabel(detailRun.predictionCheck.overallResult)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
+                    <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-2 text-center text-xs font-semibold tracking-[0.08em] text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
+                      ========== FIELD-BY-FIELD CHECK ==========
+                    </div>
+                    <div className="overflow-auto">
+                      <table className="w-full min-w-[920px] text-left text-xs sm:text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-200 bg-slate-100/80 text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200">
+                            <th className="px-4 py-2 font-semibold tracking-[0.08em]">FIELD</th>
+                            <th className="px-4 py-2 font-semibold tracking-[0.08em]">PRED</th>
+                            <th className="px-4 py-2 font-semibold tracking-[0.08em]">ACTUAL</th>
+                            <th className="px-4 py-2 font-semibold tracking-[0.08em]">DIFF</th>
+                            <th className="px-4 py-2 font-semibold tracking-[0.08em]">TOL</th>
+                            <th className="px-4 py-2 font-semibold tracking-[0.08em]">RESULT</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailRun.predictionCheck.fields.map((field) => {
+                            const isRelay = field.name.toUpperCase().startsWith('RELAY')
+                            const displayPred = isRelay
+                              ? formatRelayFieldValue(field.predicted)
+                              : formatNumber(field.predicted, 2)
+                            const displayActual = isRelay
+                              ? formatRelayFieldValue(field.actual)
+                              : formatNumber(field.actual, 2)
+
+                            return (
+                              <tr key={field.name} className="border-b border-slate-200/80 dark:border-white/10">
+                                <td className="px-4 py-2 font-semibold tracking-[0.06em] text-slate-800 dark:text-slate-100">{field.name}</td>
+                                <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{displayPred}</td>
+                                <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{displayActual}</td>
+                                <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{formatNumber(field.difference, 2)}</td>
+                                <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{formatNumber(field.tolerance, 2)}</td>
+                                <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{field.status.toUpperCase() === 'OK' ? 'OK' : 'NO'}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-700 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 sm:text-sm">
+                    Prediction check saved as Prediction ID {detailRun.predictionId ?? 'N/A'}.
+                  </div>
                 </div>
               ) : null}
 
