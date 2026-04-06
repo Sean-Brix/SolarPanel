@@ -530,7 +530,6 @@ function AnnHistoryTable({
                   <th className="pb-2">Timestamp</th>
                   <th className="pb-2">Overall</th>
                   <th className="pb-2">Sensor</th>
-                  <th className="pb-2">Weather</th>
                   <th className="pb-2">Accuracy</th>
                   <th className="pb-2">Worst Field</th>
                 </tr>
@@ -555,9 +554,6 @@ function AnnHistoryTable({
                     </td>
                     <td className="border-y border-slate-200/90 px-4 py-3 dark:border-white/8">
                       <Badge variant={statusVariant(run.sensorResult)}>{run.sensorResult}</Badge>
-                    </td>
-                    <td className="border-y border-slate-200/90 px-4 py-3 dark:border-white/8">
-                      {formatWeatherCheckScore(run.weatherCheck.matchCount, run.weatherCheck.total)}
                     </td>
                     <td className="border-y border-slate-200/90 px-4 py-3 dark:border-white/8">
                       {formatNumber(run.accuracyPct, 1)}%

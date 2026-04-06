@@ -767,7 +767,7 @@ export function parseAnnPredictionPayload(value: unknown): ParsedAnnPredictionPa
   const predictionCheck = recordFrom(record.predictionCheck) ?? comparison
 
   const fallbackTimestamp =
-    toIsoTimestamp(record.timestamp) ??
+    toIsoTimestamp(record.timestamp ?? record.savedAt) ??
     toIsoTimestamp(recordFrom(weather?.predicted ?? record.predictedWeather)?.timestamp) ??
     toIsoTimestamp(recordFrom(weather?.actual ?? record.actualWeather)?.timestamp) ??
     new Date().toISOString()
@@ -778,7 +778,7 @@ export function parseAnnPredictionPayload(value: unknown): ParsedAnnPredictionPa
   const actualWeather =
     parseWeatherSnapshot(weather?.actual ?? record.actualWeather) ??
     buildFallbackWeatherSnapshot(fallbackTimestamp)
-  const weatherCheck = parseWeatherCheck(weather?.check ?? record.weatherCheck) ?? {
+  const weatherCheck = parseWeatherCheck(weather?.check ?? record.weatherCheck ?? predictionCheck) ?? {
     weatherCodeResult: 'UNKNOWN',
     timeResult: 'UNKNOWN',
     tempResult: 'UNKNOWN',
@@ -786,7 +786,7 @@ export function parseAnnPredictionPayload(value: unknown): ParsedAnnPredictionPa
   }
 
   const timestamp =
-    toIsoTimestamp(record.timestamp) ??
+    toIsoTimestamp(record.timestamp ?? record.savedAt) ??
     predictedWeather.timestamp ??
     actualWeather.timestamp
 
@@ -1003,10 +1003,37 @@ export function toAnnRunSummary(record: SummaryRecord, parsedFields?: AnnFieldRe
 
 export function toAnnRunDetail(record: DetailRecord) {
   const summary = summaryFromRecord(record)
+  const weatherRecord = recordFrom(record.weather)
+  const rawPayload = recordFrom(record.rawPayload)
+
+  const weatherFallbackTimestamp =
+    toIsoTimestamp(record.deviceTimestamp.toISOString()) ??
+    toIsoTimestamp(rawPayload?.savedAt) ??
+    new Date().toISOString()
+
+  const predictedWeather =
+    parseWeatherSnapshot(weatherRecord?.predicted ?? rawPayload?.predictedWeather) ??
+    buildFallbackWeatherSnapshot(weatherFallbackTimestamp)
+
+  const actualWeather =
+    parseWeatherSnapshot(weatherRecord?.actual ?? rawPayload?.actualWeather) ??
+    buildFallbackWeatherSnapshot(weatherFallbackTimestamp)
+
+  const weatherCheck =
+    parseWeatherCheck(weatherRecord?.check ?? rawPayload?.weatherCheck ?? rawPayload?.predictionCheck) ?? {
+      weatherCodeResult: summary.weatherCheck.weatherCodeResult,
+      timeResult: summary.weatherCheck.timeResult,
+      tempResult: summary.weatherCheck.tempResult,
+      humidityResult: summary.weatherCheck.humidityResult,
+    }
 
   return {
     ...summary,
-    weather: record.weather,
+    weather: {
+      predicted: predictedWeather,
+      actual: actualWeather,
+      check: weatherCheck,
+    },
     samples: record.samples,
     predictionCheck: {
       ...(recordFrom(record.predictionCheck) ?? {}),
@@ -1313,6 +1340,54 @@ function applyHistoryFilters(
   })
 }
 
+function getRunIdentityKey(record: SummaryRecord) {
+  if (record.predictionId === null) {
+    return null
+  }
+
+  return [
+    record.deviceId,
+    String(record.predictionId),
+    record.deviceTimestamp.toISOString(),
+  ].join('|')
+}
+
+function shouldPreferRun(candidate: SummaryRecord, current: SummaryRecord) {
+  if (candidate.weatherCheckCount !== current.weatherCheckCount) {
+    return candidate.weatherCheckCount > current.weatherCheckCount
+  }
+
+  if (candidate.fieldCount !== current.fieldCount) {
+    return candidate.fieldCount > current.fieldCount
+  }
+
+  if (candidate.createdAt.getTime() !== current.createdAt.getTime()) {
+    return candidate.createdAt.getTime() > current.createdAt.getTime()
+  }
+
+  return candidate.id > current.id
+}
+
+function dedupeHistoryRecords(records: SummaryRecord[]) {
+  const keyed = new Map<string, SummaryRecord>()
+  const keyless: SummaryRecord[] = []
+
+  for (const record of records) {
+    const key = getRunIdentityKey(record)
+    if (!key) {
+      keyless.push(record)
+      continue
+    }
+
+    const current = keyed.get(key)
+    if (!current || shouldPreferRun(record, current)) {
+      keyed.set(key, record)
+    }
+  }
+
+  return [...keyless, ...keyed.values()]
+}
+
 export function parseAnnHistoryFilters(query: Record<string, unknown>): ParsedHistoryFilters {
   const overallResult = toStringValue(query.overallResult)
   const sensorResult = toStringValue(query.sensorResult)
@@ -1370,7 +1445,8 @@ export function buildAnnHistoryResponse(args: {
     return parsed
   }
 
-  const filtered = applyHistoryFilters(args.records, args.filters, getFields)
+  const deduped = dedupeHistoryRecords(args.records)
+  const filtered = applyHistoryFilters(deduped, args.filters, getFields)
   const ordered = [...filtered].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
   const newestFirstRuns = [...ordered]
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())

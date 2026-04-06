@@ -340,8 +340,26 @@ async function handleAnnPredictionRun(payload: unknown) {
   }
 
   const result = await enqueueWrite(async () => {
+    const data = toAnnPredictionCreateData(parsed)
+    const existing = await prisma.annPredictionRun.findFirst({
+      where: {
+        deviceId: data.deviceId,
+        predictionId: data.predictionId,
+        deviceTimestamp: data.deviceTimestamp,
+      },
+      orderBy: { id: 'desc' },
+      select: { id: true },
+    })
+
+    if (existing) {
+      return prisma.annPredictionRun.update({
+        where: { id: existing.id },
+        data,
+      })
+    }
+
     return prisma.annPredictionRun.create({
-      data: toAnnPredictionCreateData(parsed),
+      data,
     })
   })
 
