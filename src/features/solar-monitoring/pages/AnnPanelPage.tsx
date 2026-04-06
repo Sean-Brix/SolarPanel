@@ -238,6 +238,14 @@ function formatFieldValue(fieldName: string, value: number) {
   return formatNumber(value, 2)
 }
 
+function formatWeatherCheckScore(matchCount: number, total: number) {
+  if (total < 1) {
+    return 'N/A'
+  }
+
+  return `${matchCount}/${total}`
+}
+
 function mismatchRatio(field: AnnFieldResult) {
   if (field.tolerance > 0) {
     return field.difference / field.tolerance
@@ -549,7 +557,7 @@ function AnnHistoryTable({
                       <Badge variant={statusVariant(run.sensorResult)}>{run.sensorResult}</Badge>
                     </td>
                     <td className="border-y border-slate-200/90 px-4 py-3 dark:border-white/8">
-                      {run.weatherCheck.matchCount}/{run.weatherCheck.total}
+                      {formatWeatherCheckScore(run.weatherCheck.matchCount, run.weatherCheck.total)}
                     </td>
                     <td className="border-y border-slate-200/90 px-4 py-3 dark:border-white/8">
                       {formatNumber(run.accuracyPct, 1)}%
@@ -833,7 +841,9 @@ export function AnnPanelPage() {
         { Metric: 'Sensor status', Value: latestRun?.sensorResult ?? 'WAITING' },
         {
           Metric: 'Weather match',
-          Value: latestRun ? `${latestRun.weatherCheck.matchCount}/${latestRun.weatherCheck.total}` : 'N/A',
+          Value: latestRun
+            ? formatWeatherCheckScore(latestRun.weatherCheck.matchCount, latestRun.weatherCheck.total)
+            : 'N/A',
         },
         { Metric: 'Last update', Value: latestRun ? formatDateTime(new Date(latestRun.createdAt)) : 'N/A' },
         { Metric: 'Active filters', Value: activeFilterSummary },
@@ -905,13 +915,14 @@ export function AnnPanelPage() {
           label="Weather Match"
           value={
             latestRun
-              ? `${latestRun.weatherCheck.matchCount}/${latestRun.weatherCheck.total}`
+              ? formatWeatherCheckScore(latestRun.weatherCheck.matchCount, latestRun.weatherCheck.total)
               : 'N/A'
           }
           note="Code, time, temp, humidity"
           variant={
             latestRun
-              ? latestRun.weatherCheck.matchCount === latestRun.weatherCheck.total
+              ? latestRun.weatherCheck.total > 0 &&
+                latestRun.weatherCheck.matchCount === latestRun.weatherCheck.total
                 ? 'success'
                 : 'warning'
               : 'neutral'
@@ -1200,7 +1211,10 @@ export function AnnPanelPage() {
                   <div className="rounded-2xl border border-slate-200 bg-slate-100/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
                     <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Weather Checks</p>
                     <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                      {detailRun.weatherCheck.matchCount}/{detailRun.weatherCheck.total}
+                      {formatWeatherCheckScore(
+                        detailRun.weatherCheck.matchCount,
+                        detailRun.weatherCheck.total,
+                      )}
                     </p>
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-slate-100/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">

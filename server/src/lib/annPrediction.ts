@@ -322,6 +322,20 @@ function toStringValue(value: unknown): string | null {
   return null
 }
 
+function toIsoTimestamp(value: unknown): string | null {
+  const timestamp = toStringValue(value)
+  if (!timestamp) {
+    return null
+  }
+
+  const parsed = new Date(timestamp)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+
+  return parsed.toISOString()
+}
+
 function toBooleanValue(value: unknown): boolean | null {
   if (typeof value === 'boolean') {
     return value
@@ -339,6 +353,10 @@ function toBooleanValue(value: unknown): boolean | null {
 }
 
 function normalizeResult(value: unknown, fallback = 'UNKNOWN') {
+  if (typeof value === 'boolean') {
+    return value ? 'CORRECT' : 'INCORRECT'
+  }
+
   const stringValue = toStringValue(value)
   if (!stringValue) {
     return fallback
@@ -431,7 +449,104 @@ function pickRecordValue(record: Record<string, unknown>, keys: string[]): unkno
   return undefined
 }
 
-function parseSample(value: unknown, includeSampleNo: boolean): ParsedAnnSample | null {
+function sampleNumberOrFallback(
+  value: unknown,
+  includeSampleNo: boolean,
+  fallbackSampleNo?: number,
+) {
+  if (!includeSampleNo) {
+    return null
+  }
+
+  const parsed = toInteger(value)
+  if (parsed !== null) {
+    return parsed
+  }
+
+  if (typeof fallbackSampleNo === 'number' && Number.isInteger(fallbackSampleNo)) {
+    return fallbackSampleNo
+  }
+
+  return 1
+}
+
+function deriveLooseSample(
+  record: Record<string, unknown>,
+  includeSampleNo: boolean,
+  fallbackSampleNo?: number,
+): ParsedAnnSample | null {
+  const ldrTop = toFiniteNumber(record.ldrTop)
+  const ldrBottom = toFiniteNumber(record.ldrBottom)
+  const ldrLeft = toFiniteNumber(record.ldrLeft)
+  const ldrRight = toFiniteNumber(record.ldrRight)
+
+  const ldr1Raw = toFiniteNumber(pickRecordValue(record, ['ldr1']))
+  const ldr2Raw = toFiniteNumber(pickRecordValue(record, ['ldr2']))
+  const ldr3Raw = toFiniteNumber(pickRecordValue(record, ['ldr3']))
+  const ldr4Raw = toFiniteNumber(pickRecordValue(record, ['ldr4']))
+  const accXRaw = toFiniteNumber(pickRecordValue(record, ['accX', 'accx', 'axisX']))
+  const accYRaw = toFiniteNumber(pickRecordValue(record, ['accY', 'accy', 'axisY']))
+  const accZRaw = toFiniteNumber(pickRecordValue(record, ['accZ', 'accz', 'axisZ']))
+  const gyroXRaw = toFiniteNumber(pickRecordValue(record, ['gyroX', 'gyrox']))
+  const gyroYRaw = toFiniteNumber(pickRecordValue(record, ['gyroY', 'gyroy']))
+  const gyroZRaw = toFiniteNumber(pickRecordValue(record, ['gyroZ', 'gyroz']))
+  const voltageRaw = toFiniteNumber(pickRecordValue(record, ['voltage']))
+  const currentRaw = toFiniteNumber(pickRecordValue(record, ['currentMa', 'current_ma', 'current']))
+  const powerRaw = toFiniteNumber(pickRecordValue(record, ['powerMw', 'power_mw', 'power']))
+
+  const hasSignal = [
+    ldr1Raw,
+    ldr2Raw,
+    ldr3Raw,
+    ldr4Raw,
+    accXRaw,
+    accYRaw,
+    accZRaw,
+    gyroXRaw,
+    gyroYRaw,
+    gyroZRaw,
+    voltageRaw,
+    currentRaw,
+    powerRaw,
+  ].some((entry) => entry !== null)
+
+  if (!hasSignal) {
+    return null
+  }
+
+  const relay1 = parseRelayState(pickRecordValue(record, ['relay1'])) ?? { value: 0, state: 'OFF' }
+  const relay2 = parseRelayState(pickRecordValue(record, ['relay2'])) ?? { value: 0, state: 'OFF' }
+  const relay3 = parseRelayState(pickRecordValue(record, ['relay3'])) ?? { value: 0, state: 'OFF' }
+  const relay4 = parseRelayState(pickRecordValue(record, ['relay4'])) ?? { value: 0, state: 'OFF' }
+  const sampleNo = sampleNumberOrFallback(record.sampleNo, includeSampleNo, fallbackSampleNo)
+
+  return {
+    ...(sampleNo !== null ? { sampleNo } : {}),
+    ldr1: ldr1Raw ?? ldrTop ?? ldrLeft ?? 0,
+    ldr2: ldr2Raw ?? ldrTop ?? ldrRight ?? 0,
+    ldr3: ldr3Raw ?? ldrBottom ?? ldrLeft ?? 0,
+    ldr4: ldr4Raw ?? ldrBottom ?? ldrRight ?? 0,
+    accX: accXRaw ?? 0,
+    accY: accYRaw ?? 0,
+    accZ: accZRaw ?? 0,
+    gyroX: gyroXRaw ?? 0,
+    gyroY: gyroYRaw ?? 0,
+    gyroZ: gyroZRaw ?? 0,
+    voltage: voltageRaw ?? 0,
+    currentMa: currentRaw ?? 0,
+    powerMw: powerRaw ?? 0,
+    relay1,
+    relay2,
+    relay3,
+    relay4,
+  }
+}
+
+function parseSample(
+  value: unknown,
+  includeSampleNo: boolean,
+  fallbackSampleNo?: number,
+): ParsedAnnSample | null {
   const record = recordFrom(value)
   if (!record) {
     return null
@@ -453,21 +568,21 @@ function parseSample(value: unknown, includeSampleNo: boolean): ParsedAnnSample 
     powerMw: toFiniteNumber(pickRecordValue(record, ['powerMw', 'power_mw'])),
   }
 
-  if (Object.values(numberValueMap).some((entry) => entry === null)) {
-    return null
-  }
-
   const relayStates = Object.fromEntries(
     RELAY_KEYS.map((key) => [key, parseRelayState(pickRecordValue(record, [key]))]),
   ) as Record<(typeof RELAY_KEYS)[number], ParsedAnnRelayState | null>
 
-  if (Object.values(relayStates).some((entry) => entry === null)) {
-    return null
+  if (Object.values(numberValueMap).some((entry) => entry === null)) {
+    return deriveLooseSample(record, includeSampleNo, fallbackSampleNo)
   }
 
-  const sampleNo = includeSampleNo ? toInteger(record.sampleNo) : null
+  if (Object.values(relayStates).some((entry) => entry === null)) {
+    return deriveLooseSample(record, includeSampleNo, fallbackSampleNo)
+  }
+
+  const sampleNo = sampleNumberOrFallback(record.sampleNo, includeSampleNo, fallbackSampleNo)
   if (includeSampleNo && sampleNo === null) {
-    return null
+    return deriveLooseSample(record, includeSampleNo, fallbackSampleNo)
   }
 
   return {
@@ -489,6 +604,23 @@ function parseSample(value: unknown, includeSampleNo: boolean): ParsedAnnSample 
     relay2: relayStates.relay2!,
     relay3: relayStates.relay3!,
     relay4: relayStates.relay4!,
+  }
+}
+
+function buildFallbackWeatherSnapshot(
+  timestampIso: string,
+  weatherCode = 0,
+  weatherLabel?: string,
+): ParsedAnnWeatherSnapshot {
+  const parsedTimestamp = new Date(timestampIso)
+
+  return {
+    timestamp: timestampIso,
+    hour: parsedTimestamp.getUTCHours(),
+    weatherCode,
+    weather: normalizeWeatherLabel(weatherCode, weatherLabel),
+    temperatureC: 0,
+    humidity: 0,
   }
 }
 
@@ -538,18 +670,27 @@ function parseWeatherCheck(value: unknown): ParsedAnnWeatherCheck | null {
   }
 }
 
-function parseFieldResult(value: unknown): AnnFieldResult | null {
+function parseFieldResult(value: unknown, fallbackName?: string): AnnFieldResult | null {
   const record = recordFrom(value)
   if (!record) {
     return null
   }
 
-  const name = toStringValue(pickRecordValue(record, ['name', 'field']))
+  const name = toStringValue(pickRecordValue(record, ['name', 'field'])) ?? fallbackName ?? null
   const predicted = toFiniteNumber(record.predicted)
   const actual = toFiniteNumber(record.actual)
   const difference = toFiniteNumber(pickRecordValue(record, ['difference', 'diff']))
   const tolerance = toFiniteNumber(pickRecordValue(record, ['tolerance', 'tol']))
-  const status = normalizeResult(pickRecordValue(record, ['status', 'result']))
+  const match = toBooleanValue(record.match)
+  const explicitStatus = pickRecordValue(record, ['status', 'result'])
+  const status =
+    explicitStatus !== undefined
+      ? normalizeResult(explicitStatus)
+      : match !== null
+        ? match
+          ? 'OK'
+          : 'MISMATCH'
+        : 'UNKNOWN'
 
   if (
     name === null ||
@@ -575,16 +716,30 @@ function parseFieldResult(value: unknown): AnnFieldResult | null {
 }
 
 function parseFieldResults(value: unknown): AnnFieldResult[] | null {
-  if (!Array.isArray(value)) {
+  if (Array.isArray(value)) {
+    const fields: AnnFieldResult[] = []
+
+    for (const item of value) {
+      const parsed = parseFieldResult(item)
+      if (!parsed) {
+        continue
+      }
+      fields.push(parsed)
+    }
+
+    return fields
+  }
+
+  const detailRecord = recordFrom(value)
+  if (!detailRecord) {
     return null
   }
 
   const fields: AnnFieldResult[] = []
-
-  for (const item of value) {
-    const parsed = parseFieldResult(item)
+  for (const [fieldName, fieldValue] of Object.entries(detailRecord)) {
+    const parsed = parseFieldResult(fieldValue, fieldName)
     if (!parsed) {
-      return null
+      continue
     }
     fields.push(parsed)
   }
@@ -606,22 +761,32 @@ export function parseAnnPredictionPayload(value: unknown): ParsedAnnPredictionPa
   const verifiedId = toInteger(record.verifiedId)
 
   const weather = recordFrom(record.weather)
-  const predictionCheck = recordFrom(record.predictionCheck)
+  const comparison = recordFrom(record.comparison)
+  const prediction = recordFrom(record.prediction)
+  const actual = recordFrom(record.actual)
+  const predictionCheck = recordFrom(record.predictionCheck) ?? comparison
 
-  if (!predictionCheck) {
-    return null
-  }
+  const fallbackTimestamp =
+    toIsoTimestamp(record.timestamp) ??
+    toIsoTimestamp(recordFrom(weather?.predicted ?? record.predictedWeather)?.timestamp) ??
+    toIsoTimestamp(recordFrom(weather?.actual ?? record.actualWeather)?.timestamp) ??
+    new Date().toISOString()
 
-  const predictedWeather = parseWeatherSnapshot(weather?.predicted ?? record.predictedWeather)
-  const actualWeather = parseWeatherSnapshot(weather?.actual ?? record.actualWeather)
-  const weatherCheck = parseWeatherCheck(weather?.check ?? record.weatherCheck)
-
-  if (!predictedWeather || !actualWeather || !weatherCheck) {
-    return null
+  const predictedWeather =
+    parseWeatherSnapshot(weather?.predicted ?? record.predictedWeather) ??
+    buildFallbackWeatherSnapshot(fallbackTimestamp)
+  const actualWeather =
+    parseWeatherSnapshot(weather?.actual ?? record.actualWeather) ??
+    buildFallbackWeatherSnapshot(fallbackTimestamp)
+  const weatherCheck = parseWeatherCheck(weather?.check ?? record.weatherCheck) ?? {
+    weatherCodeResult: 'UNKNOWN',
+    timeResult: 'UNKNOWN',
+    tempResult: 'UNKNOWN',
+    humidityResult: 'UNKNOWN',
   }
 
   const timestamp =
-    toStringValue(record.timestamp) ??
+    toIsoTimestamp(record.timestamp) ??
     predictedWeather.timestamp ??
     actualWeather.timestamp
 
@@ -629,37 +794,45 @@ export function parseAnnPredictionPayload(value: unknown): ParsedAnnPredictionPa
     return null
   }
 
-  const timestampDate = new Date(timestamp)
-  if (Number.isNaN(timestampDate.getTime())) {
-    return null
-  }
-
   const samplesValue = record.samples
   const samplesRecord = recordFrom(samplesValue)
-  const historySource = Array.isArray(samplesValue)
-    ? samplesValue
-    : Array.isArray(samplesRecord?.history)
-      ? samplesRecord.history
-      : null
+  const historySource =
+    Array.isArray(samplesValue)
+      ? samplesValue
+      : Array.isArray(samplesRecord?.history)
+        ? samplesRecord.history
+        : null
 
-  if (!historySource) {
-    return null
-  }
+  const historyFromArray = historySource
+    ? historySource
+        .map((entry, index) => parseSample(entry, true, index + 1))
+        .filter((entry): entry is ParsedAnnSample => entry !== null)
+    : []
 
-  const history = historySource
-    .map((entry) => parseSample(entry, true))
-    .filter((entry): entry is ParsedAnnSample => entry !== null)
+  const history =
+    historyFromArray.length > 0
+      ? historyFromArray
+      : (() => {
+          const rootLevelSample = parseSample(record, true, 1)
+          return rootLevelSample ? [rootLevelSample] : []
+        })()
 
-  if (history.length !== historySource.length || history.length === 0) {
+  if (history.length === 0) {
     return null
   }
 
   const predictedNext = parseSample(
-    samplesRecord?.predictedNext ?? record.predictedNextSample,
+    samplesRecord?.predictedNext ??
+      record.predictedNextSample ??
+      prediction ??
+      history[history.length - 1],
     false,
   )
   const actualNext = parseSample(
-    samplesRecord?.actualNext ?? record.actualNextSample,
+    samplesRecord?.actualNext ??
+      record.actualNextSample ??
+      actual ??
+      history[history.length - 1],
     false,
   )
 
@@ -667,13 +840,16 @@ export function parseAnnPredictionPayload(value: unknown): ParsedAnnPredictionPa
     return null
   }
 
-  const sensorResult = normalizeResult(predictionCheck.sensorResult)
-  const overallResult = normalizeResult(predictionCheck.overallResult)
-  const fields = parseFieldResults(predictionCheck.fields ?? predictionCheck.details)
-
-  if (!fields) {
-    return null
-  }
+  const sensorResult = normalizeResult(
+    predictionCheck?.sensorResult ?? predictionCheck?.result ?? predictionCheck?.overallCorrect,
+  )
+  const overallResult = normalizeResult(
+    predictionCheck?.overallResult ?? predictionCheck?.overallCorrect,
+  )
+  const fields =
+    parseFieldResults(
+      predictionCheck?.fields ?? predictionCheck?.details ?? comparison?.details,
+    ) ?? []
 
   const relayMemory = recordFrom(record.relayMemory)
   const relayApplied = toBooleanValue(relayMemory?.applied)
@@ -724,7 +900,10 @@ export function toAnnPredictionCreateData(
     payload.weather.check.tempResult,
     payload.weather.check.humidityResult,
   ]
-  const weatherMatchCount = weatherStatuses.filter((value) => isCorrectResult(value)).length
+  const knownWeatherStatuses = weatherStatuses.filter(
+    (value) => normalizeResult(value) !== 'UNKNOWN',
+  )
+  const weatherMatchCount = knownWeatherStatuses.filter((value) => isCorrectResult(value)).length
 
   const worstField = payload.predictionCheck.fields.reduce<AnnFieldResult | null>((current, field) => {
     if (!current) {
@@ -750,7 +929,7 @@ export function toAnnPredictionCreateData(
     tempResult: payload.weather.check.tempResult,
     humidityResult: payload.weather.check.humidityResult,
     weatherMatchCount,
-    weatherCheckCount: weatherStatuses.length,
+    weatherCheckCount: knownWeatherStatuses.length,
     fieldCount,
     okCount,
     mismatchCount,

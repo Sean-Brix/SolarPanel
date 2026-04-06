@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchJsonCached } from '@/shared/lib/apiCache'
 import type {
   AnnFieldGroup,
@@ -128,6 +128,25 @@ function preferredField(history: AnnHistoryResponse | null, latestRun: AnnRunDet
   return 'VOLTAGE'
 }
 
+function resolveSelectedRunId(
+  currentSelection: number | null,
+  previousLatestRunId: number | null,
+  nextLatestRunId: number | null,
+  firstHistoryRunId: number | null,
+) {
+  if (currentSelection === null) {
+    return nextLatestRunId ?? firstHistoryRunId ?? null
+  }
+
+  // Keep following latest if user had latest selected before the refresh.
+  if (previousLatestRunId !== null && currentSelection === previousLatestRunId) {
+    return nextLatestRunId ?? firstHistoryRunId ?? null
+  }
+
+  // Otherwise preserve explicit user-selected history row.
+  return currentSelection
+}
+
 type AnnDashboardDataOptions = {
   includeTrend?: boolean
 }
@@ -146,6 +165,7 @@ export function useAnnDashboardData(options: AnnDashboardDataOptions = {}) {
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const latestRunIdRef = useRef<number | null>(null)
 
   const includeTrend = options.includeTrend ?? true
   const resolution = DEFAULT_RESOLUTION[range]
@@ -194,6 +214,8 @@ export function useAnnDashboardData(options: AnnDashboardDataOptions = {}) {
         latestResponse.ok && latestResponse.status !== 404
           ? (latestResponse.body as AnnRunDetail)
           : null
+      const previousLatestRunId = latestRunIdRef.current
+      const nextLatestRunId = nextLatest?.id ?? null
 
       setLatestRun(nextLatest)
       setSelectedField((current) => {
@@ -208,7 +230,10 @@ export function useAnnDashboardData(options: AnnDashboardDataOptions = {}) {
           ? current
           : preferredField(null, nextLatest)
       })
-      setSelectedRunId((current) => current ?? nextLatest?.id ?? null)
+      setSelectedRunId((current) =>
+        resolveSelectedRunId(current, previousLatestRunId, nextLatestRunId, null),
+      )
+      latestRunIdRef.current = nextLatestRunId
     }
 
     const load = async (force = false) => {
@@ -236,6 +261,9 @@ export function useAnnDashboardData(options: AnnDashboardDataOptions = {}) {
           latestResponse.ok && latestResponse.status !== 404
             ? (latestResponse.body as AnnRunDetail)
             : null
+        const previousLatestRunId = latestRunIdRef.current
+        const nextLatestRunId = nextLatest?.id ?? null
+        const firstHistoryRunId = nextHistory.runs[0]?.id ?? null
 
         if (!active) {
           return
@@ -256,7 +284,15 @@ export function useAnnDashboardData(options: AnnDashboardDataOptions = {}) {
             : preferredField(nextHistory, nextLatest)
         })
 
-        setSelectedRunId((current) => current ?? nextLatest?.id ?? nextHistory.runs[0]?.id ?? null)
+        setSelectedRunId((current) =>
+          resolveSelectedRunId(
+            current,
+            previousLatestRunId,
+            nextLatestRunId,
+            firstHistoryRunId,
+          ),
+        )
+        latestRunIdRef.current = nextLatestRunId
       } catch (loadError) {
         if (!active) {
           return
@@ -272,53 +308,51 @@ export function useAnnDashboardData(options: AnnDashboardDataOptions = {}) {
 
     void load()
 
+    const refreshAnnData = () => {
+      if (document.visibilityState !== 'visible') {
+        return
+      }
+
+      if (includeTrend || historyPage === 1) {
+        void load(true)
+        return
+      }
+
+      void loadLatest(true).catch((latestError) => {
+        if (!active) {
+          return
+        }
+
+        setError(
+          latestError instanceof Error
+            ? latestError.message
+            : 'Unable to refresh latest ANN run',
+        )
+      })
+    }
+
     const events = new EventSource('/api/events/readings')
     const onReadingEvent = (message: MessageEvent<string>) => {
       try {
         const payload = JSON.parse(message.data) as { panelType?: string }
 
-        if (payload.panelType === 'ann' && document.visibilityState === 'visible') {
-          if (includeTrend || historyPage === 1) {
-            void load(true)
-          } else {
-            void loadLatest(true).catch((latestError) => {
-              if (!active) {
-                return
-              }
-
-              setError(
-                latestError instanceof Error
-                  ? latestError.message
-                  : 'Unable to refresh latest ANN run',
-              )
-            })
-          }
+        if (payload.panelType === 'ann') {
+          refreshAnnData()
         }
       } catch {
-        if (document.visibilityState === 'visible') {
-          if (includeTrend || historyPage === 1) {
-            void load(true)
-          } else {
-            void loadLatest(true).catch((latestError) => {
-              if (!active) {
-                return
-              }
-
-              setError(
-                latestError instanceof Error
-                  ? latestError.message
-                  : 'Unable to refresh latest ANN run',
-              )
-            })
-          }
-        }
+        refreshAnnData()
       }
     }
+
+    const refreshInterval = setInterval(() => {
+      refreshAnnData()
+    }, 15_000)
 
     events.addEventListener('reading', onReadingEvent as EventListener)
 
     return () => {
       active = false
+      clearInterval(refreshInterval)
       events.removeEventListener('reading', onReadingEvent as EventListener)
       events.close()
     }

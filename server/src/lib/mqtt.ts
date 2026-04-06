@@ -329,7 +329,13 @@ async function handleTrackerReading(panelType: 'conventional', payload: TrackerR
 async function handleAnnPredictionRun(payload: unknown) {
   const parsed = parseAnnPredictionPayload(payload)
   if (!parsed) {
-    console.error('[MQTT] Invalid ANN reading payload:', payload)
+    const payloadKeys =
+      payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? Object.keys(payload as Record<string, unknown>)
+        : []
+
+    console.error('[MQTT] Invalid ANN reading payload. Top-level keys:', payloadKeys)
+    console.error('[MQTT] Invalid ANN reading payload body:', payload)
     return
   }
 
