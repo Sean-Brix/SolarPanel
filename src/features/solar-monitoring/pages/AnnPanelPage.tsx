@@ -1,7 +1,8 @@
 import { useDeferredValue, useMemo, useState } from 'react'
-import { BrainCircuit, CheckCircle2, Clock3, Download, Waves } from 'lucide-react'
+import { Clock3, Download, Waves, BrainCircuit, CheckCircle2 } from 'lucide-react'
 import { ChartCard } from '@/features/solar-monitoring/components/ChartCard'
 import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
+import { FindingsModal } from '@/features/solar-monitoring/components/FindingsModal'
 import {
   useAnnDashboardData,
   type AnnDashboardFilters,
@@ -20,6 +21,7 @@ import type {
   AnnRunSummary,
   AnnSample,
 } from '@/shared/types/ann'
+import ANN_EXCEL_URL from '@/assets/ANN.xlsx?url'
 import { Badge } from '@/shared/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/ui/card'
 import { ScrollArea } from '@/shared/ui/scroll-area'
@@ -669,6 +671,7 @@ export function AnnPanelPage() {
   const [isExporting, setIsExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [isPayloadModalOpen, setIsPayloadModalOpen] = useState(false)
+  const [isFindingsModalOpen, setIsFindingsModalOpen] = useState(false)
   const includeTrend = view === 'accuracy' || view === 'weather' || view === 'field'
 
   const {
@@ -860,6 +863,7 @@ export function AnnPanelPage() {
 
   return (
     <div className="space-y-4 pb-10">
+      <FindingsModal isOpen={isFindingsModalOpen} onClose={() => setIsFindingsModalOpen(false)} excelUrl={ANN_EXCEL_URL} title="ANN Smart Panel" />
       <PageHeader
         eyebrow="ANN prediction monitor"
         title="ANN Smart Panel"
@@ -869,7 +873,15 @@ export function AnnPanelPage() {
         lastUpdated={latestRun ? new Date(latestRun.createdAt) : new Date()}
       />
 
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setIsFindingsModalOpen(true)}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-100 sm:text-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          <BrainCircuit className="h-4 w-4" />
+          Findings
+        </button>
         <button
           type="button"
           onClick={() => {

@@ -4,8 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n api,web -c yellow,cyan \"npm run server:dev\" \"vite\"",
-    "dev:web": "vite",
+    "dev": "vite",
     "server:dev": "tsx watch server/src/index.ts",
     "server:start": "node server/dist/index.js",
     "server:build": "tsc -p server/tsconfig.json",

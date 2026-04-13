@@ -3,6 +3,7 @@ import { BatteryCharging, Download, GaugeCircle, Orbit, Repeat2, Waves } from 'l
 import { ChartCard } from '@/features/solar-monitoring/components/ChartCard'
 import { HistoricalLogTable } from '@/features/solar-monitoring/components/HistoricalLogTable'
 import { MetricCard } from '@/features/solar-monitoring/components/MetricCard'
+import { FindingsModal } from '@/features/solar-monitoring/components/FindingsModal'
 import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
 import { TimelineCard } from '@/features/solar-monitoring/components/TimelineCard'
 import { usePanelTrackerData } from '@/features/solar-monitoring/hooks/usePanelTrackerData'
@@ -10,6 +11,7 @@ import { panels } from '@/features/solar-monitoring/data/mock-data'
 import { fetchJsonCached } from '@/shared/lib/apiCache'
 import { buildDaySheets, exportWorkbookByDay } from '@/shared/lib/excelExport'
 import type { PaginatedResponse, TimeRange } from '@/shared/types/solar'
+import CONVE_EXCEL_URL from '@/assets/CONVE.xlsx?url'
 
 type ConventionalHistoryReading = {
   id: number
@@ -83,6 +85,7 @@ async function fetchAllConventionalReadings(range: TimeRange) {
 
 export function ConventionalPanelPage() {
   const panel = panels.conventional
+  const [isModalOpen, setIsModalOpen] = useState(false)
   const range = useMemo<TimeRange>(() => 'daily', [])
   const telemetry = usePanelTrackerData('conventional', range)
   const [isExporting, setIsExporting] = useState(false)
@@ -182,6 +185,7 @@ export function ConventionalPanelPage() {
 
   return (
     <div className="space-y-4 pb-10">
+      <FindingsModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} excelUrl={CONVE_EXCEL_URL} title="Conventional Panel" />
       <PageHeader
         eyebrow="Tracking panel"
         title="Conventional Tracker"
@@ -191,7 +195,15 @@ export function ConventionalPanelPage() {
         lastUpdated={telemetry.lastUpdated}
       />
 
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setIsModalOpen(true)}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-100 sm:text-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          <Waves className="h-4 w-4" />
+          Findings
+        </button>
         <button
           type="button"
           onClick={() => {

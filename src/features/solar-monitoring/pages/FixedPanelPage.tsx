@@ -5,11 +5,13 @@ import { HistoricalLogTable } from '@/features/solar-monitoring/components/Histo
 import { MetricCard } from '@/features/solar-monitoring/components/MetricCard'
 import { PageHeader } from '@/features/solar-monitoring/components/PageHeader'
 import { TimelineCard } from '@/features/solar-monitoring/components/TimelineCard'
+import { FindingsModal } from '@/features/solar-monitoring/components/FindingsModal'
 import { usePanelTrackerData } from '@/features/solar-monitoring/hooks/usePanelTrackerData'
 import { panels } from '@/features/solar-monitoring/data/mock-data'
 import { fetchJsonCached } from '@/shared/lib/apiCache'
 import { buildDaySheets, exportWorkbookByDay } from '@/shared/lib/excelExport'
 import type { PaginatedResponse, TimeRange } from '@/shared/types/solar'
+import FIXED_EXCEL_URL from '@/assets/FIXED.xlsx?url'
 
 type FixedHistoryReading = {
   id: number
@@ -80,6 +82,7 @@ async function fetchAllFixedReadings(range: TimeRange) {
 
 export function FixedPanelPage() {
   const panel = panels.fixed
+  const [isModalOpen, setIsModalOpen] = useState(false)
   const range = useMemo<TimeRange>(() => 'daily', [])
   const telemetry = usePanelTrackerData('fixed', range)
   const [isExporting, setIsExporting] = useState(false)
@@ -153,6 +156,7 @@ export function FixedPanelPage() {
 
   return (
     <div className="space-y-4 pb-10">
+      <FindingsModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} excelUrl={FIXED_EXCEL_URL} title="Fixed Panel" />
       <PageHeader
         eyebrow="Fixed panel"
         title="Fixed Panel"
@@ -162,7 +166,15 @@ export function FixedPanelPage() {
         lastUpdated={telemetry.lastUpdated}
       />
 
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setIsModalOpen(true)}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-100 sm:text-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          <SunMedium className="h-4 w-4" />
+          Findings
+        </button>
         <button
           type="button"
           onClick={() => {
