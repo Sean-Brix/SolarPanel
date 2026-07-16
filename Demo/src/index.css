@@ -1,0 +1,111 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --app-text: #e5edf7;
+  --app-bg-start: #0d1728;
+  --app-bg-end: #09111d;
+  --app-overlay: linear-gradient(180deg, rgba(148, 163, 184, 0.06), rgba(148, 163, 184, 0));
+  --scroll-track: rgba(15, 23, 42, 0.24);
+  --scroll-thumb: rgba(71, 85, 105, 0.36);
+  color: var(--app-text);
+  background: linear-gradient(180deg, var(--app-bg-start) 0%, var(--app-bg-end) 100%);
+  font-family: 'Manrope', sans-serif;
+  line-height: 1.6;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color-scheme: dark;
+}
+
+html.light {
+  --app-text: #0f172a;
+  --app-bg-start: #f5f7fb;
+  --app-bg-end: #e8eef6;
+  --app-overlay: linear-gradient(180deg, rgba(100, 116, 139, 0.12), rgba(100, 116, 139, 0));
+  --scroll-track: rgba(148, 163, 184, 0.3);
+  --scroll-thumb: rgba(100, 116, 139, 0.38);
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: transparent;
+  color: var(--app-text);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: var(--app-overlay);
+  opacity: 0.28;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(94, 234, 212, 0.22);
+  color: #f8fafc;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scroll-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 999px;
+}
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: 'Manrope', sans-serif;
+    margin: 0;
+    line-height: 1.2;
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .text-wrap-anywhere {
+    overflow-wrap: anywhere;
+  }
+}

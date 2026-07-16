@@ -1,0 +1,21 @@
+{
+  "fixed": [
+    { "timestamp": "2026-03-15 10:00", "panel": "fixed", "voltage": 34.4, "current": 7.1, "power": 244.2, "energy": 1.44, "status": "Nominal" },
+    { "timestamp": "2026-03-15 11:00", "panel": "fixed", "voltage": 35.6, "current": 8.0, "power": 284.8, "energy": 2.11, "status": "Nominal" },
+    { "timestamp": "2026-03-15 12:00", "panel": "fixed", "voltage": 36.2, "current": 8.5, "power": 307.7, "energy": 2.78, "status": "Reference peak" },
+    { "timestamp": "2026-03-15 13:00", "panel": "fixed", "voltage": 36.5, "current": 8.8, "power": 321.2, "energy": 3.31, "status": "Stable" }
+  ],
+  "conventional": [
+    { "timestamp": "2026-03-15 10:00", "panel": "conventional", "voltage": 35.2, "current": 7.9, "power": 278.1, "energy": 1.69, "azimuth": 146, "elevation": 48, "status": "Tracking" },
+    { "timestamp": "2026-03-15 11:00", "panel": "conventional", "voltage": 36.6, "current": 8.5, "power": 311.1, "energy": 2.46, "azimuth": 171, "elevation": 56, "status": "Tracking" },
+    { "timestamp": "2026-03-15 12:00", "panel": "conventional", "voltage": 37.3, "current": 9.0, "power": 335.7, "energy": 3.18, "azimuth": 188, "elevation": 61, "status": "Peak" },
+    { "timestamp": "2026-03-15 13:00", "panel": "conventional", "voltage": 37.8, "current": 9.2, "power": 346.2, "energy": 3.73, "azimuth": 201, "elevation": 64, "status": "Tracking" }
+  ],
+  "ann": [
+    { "timestamp": "2026-03-15 10:00", "panel": "ann", "voltage": 35.9, "current": 7.5, "power": 269.3, "energy": 1.66, "azimuth": 149, "elevation": 49, "forecast": "Clear ramp", "status": "Prediction matched" },
+    { "timestamp": "2026-03-15 11:00", "panel": "ann", "voltage": 37.0, "current": 8.2, "power": 303.4, "energy": 2.43, "azimuth": 171, "elevation": 56, "forecast": "Low movement need", "status": "Adaptive hold" },
+    { "timestamp": "2026-03-15 12:00", "panel": "ann", "voltage": 37.8, "current": 8.7, "power": 328.9, "energy": 3.18, "azimuth": 184, "elevation": 59, "forecast": "High sun window", "status": "Prediction aligned" },
+    { "timestamp": "2026-03-15 13:00", "panel": "ann", "voltage": 38.2, "current": 8.9, "power": 338.4, "energy": 3.79, "azimuth": 194, "elevation": 63, "forecast": "Selective step", "status": "Motor deferred" },
+    { "timestamp": "2026-03-15 14:00", "panel": "ann", "voltage": 37.6, "current": 8.5, "power": 319.6, "energy": 4.06, "azimuth": 199, "elevation": 60, "forecast": "Cloud edge", "status": "Guard active" }
+  ]
+}

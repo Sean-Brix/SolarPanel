@@ -1,0 +1,48 @@
+{
+  "fixed": [
+    {
+      "id": "fx-1",
+      "title": "Reference stable",
+      "message": "Electrical readings remain within expected baseline tolerance.",
+      "severity": "normal",
+      "time": "12:00",
+      "source": "Fixed panel"
+    }
+  ],
+  "conventional": [
+    {
+      "id": "cv-1",
+      "title": "High movement activity",
+      "message": "Tracker has executed 14 adjustments today, increasing actuation energy draw.",
+      "severity": "warning",
+      "time": "12:03",
+      "source": "Tracking motor"
+    }
+  ],
+  "ann": [
+    {
+      "id": "ann-1",
+      "title": "Adaptive mode nominal",
+      "message": "Prediction confidence remains above 90% and movement throttling is active.",
+      "severity": "normal",
+      "time": "12:01",
+      "source": "ANN controller"
+    },
+    {
+      "id": "ann-2",
+      "title": "Cloud disturbance detected",
+      "message": "Transient cloud edge was observed, but predicted gain stayed too low to trigger a motor step.",
+      "severity": "warning",
+      "time": "12:09",
+      "source": "Forecast module"
+    },
+    {
+      "id": "ann-3",
+      "title": "Abnormal power output guard",
+      "message": "No anomaly confirmed. The guard remains armed because actual output dipped 1.8% below forecast for one cycle.",
+      "severity": "critical",
+      "time": "12:16",
+      "source": "Power diagnostics"
+    }
+  ]
+}

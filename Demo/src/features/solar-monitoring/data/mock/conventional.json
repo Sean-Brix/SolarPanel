@@ -1,0 +1,101 @@
+{
+  "key": "conventional",
+  "name": "Conventional Tracking Panel",
+  "shortName": "Conventional",
+  "description": "Motorized tracker that continuously follows solar direction for maximum capture.",
+  "status": "tracking",
+  "summary": "Highest raw output in clear conditions, with frequent movement and greater actuation cost.",
+  "connection": "ESP mock online",
+  "metrics": {
+    "voltage": 37.9,
+    "current": 8.8,
+    "power": 333.5,
+    "energyToday": 4.09,
+    "efficiency": 91,
+    "peakPower": 346.2,
+    "movementEnergy": 0.24
+  },
+  "tracker": {
+    "azimuth": 188,
+    "elevation": 61,
+    "heading": "South-west bias",
+    "mode": "Continuous tracking",
+    "movementCount": 14,
+    "travelDegrees": 126,
+    "nextAdjustment": "4 min"
+  },
+  "ranges": {
+    "live": [
+      { "label": "11:10", "voltage": 32.4, "current": 5.3, "power": 171.7, "energy": 1.15, "efficiency": 76, "movementCount": 2, "movementCost": 0.03 },
+      { "label": "11:20", "voltage": 33.8, "current": 6.1, "power": 206.2, "energy": 1.39, "efficiency": 79, "movementCount": 4, "movementCost": 0.05 },
+      { "label": "11:30", "voltage": 35.2, "current": 7.0, "power": 246.4, "energy": 1.75, "efficiency": 84, "movementCount": 6, "movementCost": 0.08 },
+      { "label": "11:40", "voltage": 36.7, "current": 8.1, "power": 297.3, "energy": 2.18, "efficiency": 88, "movementCount": 8, "movementCost": 0.11 },
+      { "label": "11:50", "voltage": 37.4, "current": 8.7, "power": 325.4, "energy": 2.58, "efficiency": 90, "movementCount": 10, "movementCost": 0.15 },
+      { "label": "12:00", "voltage": 37.9, "current": 8.8, "power": 333.5, "energy": 2.97, "efficiency": 91, "movementCount": 12, "movementCost": 0.19 },
+      { "label": "12:10", "voltage": 37.6, "current": 8.5, "power": 319.6, "energy": 3.33, "efficiency": 90, "movementCount": 13, "movementCost": 0.21 },
+      { "label": "12:20", "voltage": 37.1, "current": 8.0, "power": 296.8, "energy": 3.64, "efficiency": 89, "movementCount": 14, "movementCost": 0.24 }
+    ],
+    "hourly": [
+      { "label": "08:00", "voltage": 31.2, "current": 5.4, "power": 168.5, "energy": 0.46, "efficiency": 74, "movementCount": 2, "movementCost": 0.03 },
+      { "label": "09:00", "voltage": 33.0, "current": 6.8, "power": 224.4, "energy": 1.02, "efficiency": 80, "movementCount": 4, "movementCost": 0.06 },
+      { "label": "10:00", "voltage": 35.2, "current": 7.9, "power": 278.1, "energy": 1.69, "efficiency": 85, "movementCount": 7, "movementCost": 0.10 },
+      { "label": "11:00", "voltage": 36.6, "current": 8.5, "power": 311.1, "energy": 2.46, "efficiency": 88, "movementCount": 9, "movementCost": 0.14 },
+      { "label": "12:00", "voltage": 37.3, "current": 9.0, "power": 335.7, "energy": 3.18, "efficiency": 91, "movementCount": 12, "movementCost": 0.18 },
+      { "label": "13:00", "voltage": 37.8, "current": 9.2, "power": 346.2, "energy": 3.73, "efficiency": 92, "movementCount": 13, "movementCost": 0.21 },
+      { "label": "14:00", "voltage": 37.2, "current": 8.8, "power": 327.4, "energy": 4.01, "efficiency": 91, "movementCount": 14, "movementCost": 0.23 },
+      { "label": "15:00", "voltage": 36.7, "current": 8.4, "power": 308.3, "energy": 4.09, "efficiency": 89, "movementCount": 14, "movementCost": 0.24 }
+    ],
+    "daily": [
+      { "label": "Mon", "voltage": 36.7, "current": 8.4, "power": 308.3, "energy": 3.91, "efficiency": 89, "movementCount": 13, "movementCost": 0.22 },
+      { "label": "Tue", "voltage": 36.9, "current": 8.5, "power": 313.7, "energy": 4.00, "efficiency": 90, "movementCount": 14, "movementCost": 0.23 },
+      { "label": "Wed", "voltage": 37.2, "current": 8.7, "power": 323.6, "energy": 4.06, "efficiency": 90, "movementCount": 14, "movementCost": 0.24 },
+      { "label": "Thu", "voltage": 37.4, "current": 8.9, "power": 332.9, "energy": 4.09, "efficiency": 91, "movementCount": 14, "movementCost": 0.24 },
+      { "label": "Fri", "voltage": 37.1, "current": 8.6, "power": 319.1, "energy": 4.02, "efficiency": 90, "movementCount": 13, "movementCost": 0.23 },
+      { "label": "Sat", "voltage": 36.8, "current": 8.3, "power": 305.4, "energy": 3.95, "efficiency": 88, "movementCount": 12, "movementCost": 0.22 },
+      { "label": "Sun", "voltage": 36.9, "current": 8.4, "power": 310.0, "energy": 3.98, "efficiency": 89, "movementCount": 13, "movementCost": 0.23 }
+    ],
+    "weekly": [
+      { "label": "W1", "voltage": 36.5, "current": 8.3, "power": 302.9, "energy": 22.8, "efficiency": 88, "movementCount": 87, "movementCost": 1.45 },
+      { "label": "W2", "voltage": 36.8, "current": 8.4, "power": 309.1, "energy": 23.5, "efficiency": 89, "movementCount": 89, "movementCost": 1.49 },
+      { "label": "W3", "voltage": 37.0, "current": 8.6, "power": 318.2, "energy": 24.1, "efficiency": 90, "movementCount": 91, "movementCost": 1.52 },
+      { "label": "W4", "voltage": 37.2, "current": 8.8, "power": 327.4, "energy": 24.9, "efficiency": 91, "movementCount": 94, "movementCost": 1.58 },
+      { "label": "W5", "voltage": 37.0, "current": 8.6, "power": 318.2, "energy": 24.0, "efficiency": 90, "movementCount": 90, "movementCost": 1.51 },
+      { "label": "W6", "voltage": 36.8, "current": 8.4, "power": 309.1, "energy": 23.6, "efficiency": 89, "movementCount": 88, "movementCost": 1.48 }
+    ]
+  },
+  "energy": {
+    "hourly": [
+      { "label": "08:00", "energy": 0.46, "cumulative": 0.46 },
+      { "label": "09:00", "energy": 0.56, "cumulative": 1.02 },
+      { "label": "10:00", "energy": 0.67, "cumulative": 1.69 },
+      { "label": "11:00", "energy": 0.77, "cumulative": 2.46 },
+      { "label": "12:00", "energy": 0.72, "cumulative": 3.18 },
+      { "label": "13:00", "energy": 0.55, "cumulative": 3.73 },
+      { "label": "14:00", "energy": 0.28, "cumulative": 4.01 },
+      { "label": "15:00", "energy": 0.08, "cumulative": 4.09 }
+    ],
+    "daily": [
+      { "label": "Mon", "energy": 3.91, "cumulative": 3.91 },
+      { "label": "Tue", "energy": 4.00, "cumulative": 7.91 },
+      { "label": "Wed", "energy": 4.06, "cumulative": 11.97 },
+      { "label": "Thu", "energy": 4.09, "cumulative": 16.06 },
+      { "label": "Fri", "energy": 4.02, "cumulative": 20.08 },
+      { "label": "Sat", "energy": 3.95, "cumulative": 24.03 },
+      { "label": "Sun", "energy": 3.98, "cumulative": 28.01 }
+    ],
+    "weekly": [
+      { "label": "W1", "energy": 22.8, "cumulative": 22.8 },
+      { "label": "W2", "energy": 23.5, "cumulative": 46.3 },
+      { "label": "W3", "energy": 24.1, "cumulative": 70.4 },
+      { "label": "W4", "energy": 24.9, "cumulative": 95.3 },
+      { "label": "W5", "energy": 24.0, "cumulative": 119.3 },
+      { "label": "W6", "energy": 23.6, "cumulative": 142.9 }
+    ]
+  },
+  "timeline": [
+    { "time": "08:10", "title": "Tracker wake sequence", "detail": "Initial eastward alignment finished and continuous tracking mode started.", "type": "movement" },
+    { "time": "10:05", "title": "Azimuth correction", "detail": "Tracker made a 9 degree correction to maintain direct incidence.", "type": "movement" },
+    { "time": "12:00", "title": "Power apex", "detail": "Tracker reached the daily high-output band but movement overhead continued to accumulate.", "type": "metric" },
+    { "time": "14:20", "title": "Cloud edge chase", "detail": "Two additional adjustments were executed during partial clouding.", "type": "system" }
+  ]
+}

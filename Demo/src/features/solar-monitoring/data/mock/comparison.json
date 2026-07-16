@@ -1,0 +1,84 @@
+{
+  "summaries": [
+    {
+      "panel": "fixed",
+      "currentPower": 295.3,
+      "energyToday": 3.82,
+      "efficiency": 84,
+      "status": "Stable baseline",
+      "movementFrequency": "None"
+    },
+    {
+      "panel": "conventional",
+      "currentPower": 333.5,
+      "energyToday": 4.09,
+      "efficiency": 91,
+      "status": "Maximum capture",
+      "movementFrequency": "14 adjustments"
+    },
+    {
+      "panel": "ann",
+      "currentPower": 327.7,
+      "energyToday": 4.14,
+      "efficiency": 94,
+      "status": "Predictive control",
+      "movementFrequency": "7 adjustments"
+    }
+  ],
+  "table": [
+    { "metric": "Voltage", "fixed": "36.4 V", "conventional": "37.9 V", "ann": "38.1 V", "emphasis": "ann" },
+    { "metric": "Current", "fixed": "8.1 A", "conventional": "8.8 A", "ann": "8.6 A", "emphasis": "conventional" },
+    { "metric": "Power", "fixed": "295.3 W", "conventional": "333.5 W", "ann": "327.7 W", "emphasis": "conventional" },
+    { "metric": "Energy Generated Today", "fixed": "3.82 kWh", "conventional": "4.09 kWh", "ann": "4.14 kWh", "emphasis": "ann" },
+    { "metric": "Efficiency Rating", "fixed": "84%", "conventional": "91%", "ann": "94%", "emphasis": "ann" },
+    { "metric": "Movement Frequency", "fixed": "0", "conventional": "14", "ann": "7", "emphasis": "fixed" },
+    { "metric": "Azimuth/Elevation Tracking", "fixed": "Not available", "conventional": "Continuous", "ann": "Selective", "emphasis": "ann" },
+    { "metric": "Environmental Responsiveness", "fixed": "Passive", "conventional": "Reactive", "ann": "Predictive", "emphasis": "ann" },
+    { "metric": "Smart Prediction Capability", "fixed": "No", "conventional": "No", "ann": "Yes", "emphasis": "ann" },
+    { "metric": "System Alerts Count", "fixed": "0", "conventional": "1", "ann": "3", "emphasis": "fixed" }
+  ],
+  "insights": [
+    {
+      "title": "ANN leads on net efficiency",
+      "detail": "The ANN panel trails raw tracker output only slightly but delivers higher net efficiency after movement savings are considered.",
+      "tone": "success"
+    },
+    {
+      "title": "Conventional wins on immediate peak power",
+      "detail": "When the sky remains clear, the conventional tracker still posts the strongest raw power spikes due to constant alignment.",
+      "tone": "info"
+    },
+    {
+      "title": "Fixed remains the clean baseline",
+      "detail": "The fixed array provides the simplest, most stable reference and helps quantify the gain of active tracking strategies.",
+      "tone": "info"
+    },
+    {
+      "title": "Movement cost is now visible",
+      "detail": "Frequent conventional adjustments produce higher output, but they also introduce a measurable actuation energy penalty compared with ANN control.",
+      "tone": "warning"
+    }
+  ],
+  "rankings": [
+    {
+      "label": "Best overall",
+      "winner": "ann",
+      "reason": "Highest energy today with fewer tracker movements and the strongest efficiency score."
+    },
+    {
+      "label": "Best raw output",
+      "winner": "conventional",
+      "reason": "Continuous tracking still delivers the biggest instantaneous power peaks."
+    },
+    {
+      "label": "Best energy-saving movement",
+      "winner": "ann",
+      "reason": "Selective positioning halves the movement count while staying close to the tracker’s output."
+    },
+    {
+      "label": "Best baseline reference",
+      "winner": "fixed",
+      "reason": "Zero movement cost and steady behavior make it the clearest control system."
+    }
+  ]
+}

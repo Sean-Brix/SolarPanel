@@ -1,0 +1,26 @@
+{
+  "fixed": {
+    "temperature": 34.3,
+    "humidity": 62,
+    "irradiance": 882,
+    "windKph": 11,
+    "condition": "Bright sun",
+    "sunlightIndex": 84
+  },
+  "conventional": {
+    "temperature": 34.1,
+    "humidity": 63,
+    "irradiance": 896,
+    "windKph": 12,
+    "condition": "Bright sun",
+    "sunlightIndex": 86
+  },
+  "ann": {
+    "temperature": 34.8,
+    "humidity": 61,
+    "irradiance": 955,
+    "windKph": 12,
+    "condition": "Mostly sunny",
+    "sunlightIndex": 88
+  }
+}
